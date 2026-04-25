@@ -1,0 +1,87 @@
+<?xml version="1.0"?>
+<robot name="sloped_terrain">
+
+  <!-- Base: Slope -->
+  <link name="slope">
+    <inertial>
+      <mass value="2.0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 1.0 0.01"/>
+      </geometry>
+      <material name="brown">
+        <color rgba="0.8 0.8 0.8 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 1.0 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Left wall -->
+  <link name="left_wall">
+    <inertial>
+      <mass value="0.5"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 -0.5 0.055" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 0.01 0.1"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.3 0.3 0.3 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.5 0.055" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 0.01 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Right wall -->
+  <link name="right_wall">
+    <inertial>
+      <mass value="0.5"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0.5 0.055" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 0.01 0.1"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0.5 0.055" rpy="0 0 0"/>
+      <geometry>
+        <box size="1 0.01 0.1"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Joints -->
+  <joint name="left_wall_joint" type="fixed">
+    <parent link="slope"/>
+    <child link="left_wall"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="right_wall_joint" type="fixed">
+    <parent link="slope"/>
+    <child link="right_wall"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>

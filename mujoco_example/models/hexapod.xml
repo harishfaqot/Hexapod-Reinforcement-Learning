@@ -1,0 +1,138 @@
+<mujoco model="phantomx_ax12_hexapod_18dof">
+  <compiler angle="radian"/>
+  <option timestep="0.005" gravity="0 0 -9.81" integrator="RK4"/>
+
+  <default>
+    <geom density="700" friction="1.0 0.1 0.1"/>
+    <joint damping="1.2" armature="0.01"/>
+    <position kp="35" ctrllimited="true"/>
+  </default>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.15 0.2 0.25" rgb2="0.2 0.25 0.3"/>
+    <material name="ground_mat" texture="grid" texrepeat="6 6" reflectance="0.1"/>
+    <material name="body_mat" rgba="0.1 0.1 0.1 1"/>
+    <material name="leg_mat" rgba="0.2 0.55 0.8 1"/>
+    <material name="foot_mat" rgba="0.95 0.9 0.35 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 3" diffuse="1 1 1"/>
+    <geom name="ground" type="plane" size="5 5 0.1" material="ground_mat"/>
+
+    <body name="base" pos="0 0 0.20">
+      <freejoint/>
+      <geom name="base_geom" type="box" size="0.12 0.09 0.025" material="body_mat"/>
+
+      <body name="lf_coxa" pos="0.08 0.085 0">
+        <joint name="lf_coxa_joint" type="hinge" axis="0 0 1" range="-0.8 0.8"/>
+        <geom type="capsule" fromto="0 0 0 0.05 0 0" size="0.012" material="leg_mat"/>
+        <body name="lf_femur" pos="0.05 0 0">
+          <joint name="lf_femur_joint" type="hinge" axis="0 1 0" range="-0.9 0.9"/>
+          <geom type="capsule" fromto="0 0 0 0.09 0 -0.02" size="0.011" material="leg_mat"/>
+          <body name="lf_tibia" pos="0.09 0 -0.02">
+            <joint name="lf_tibia_joint" type="hinge" axis="0 1 0" range="-1.2 0.2"/>
+            <geom type="capsule" fromto="0 0 0 0.11 0 -0.07" size="0.010" material="leg_mat"/>
+            <geom name="lf_foot" type="sphere" pos="0.11 0 -0.07" size="0.015" material="foot_mat"/>
+          </body>
+        </body>
+      </body>
+
+      <body name="lm_coxa" pos="0.0 0.10 0">
+        <joint name="lm_coxa_joint" type="hinge" axis="0 0 1" range="-0.8 0.8"/>
+        <geom type="capsule" fromto="0 0 0 0.05 0 0" size="0.012" material="leg_mat"/>
+        <body name="lm_femur" pos="0.05 0 0">
+          <joint name="lm_femur_joint" type="hinge" axis="0 1 0" range="-0.9 0.9"/>
+          <geom type="capsule" fromto="0 0 0 0.09 0 -0.02" size="0.011" material="leg_mat"/>
+          <body name="lm_tibia" pos="0.09 0 -0.02">
+            <joint name="lm_tibia_joint" type="hinge" axis="0 1 0" range="-1.2 0.2"/>
+            <geom type="capsule" fromto="0 0 0 0.11 0 -0.07" size="0.010" material="leg_mat"/>
+            <geom name="lm_foot" type="sphere" pos="0.11 0 -0.07" size="0.015" material="foot_mat"/>
+          </body>
+        </body>
+      </body>
+
+      <body name="lr_coxa" pos="-0.08 0.085 0">
+        <joint name="lr_coxa_joint" type="hinge" axis="0 0 1" range="-0.8 0.8"/>
+        <geom type="capsule" fromto="0 0 0 0.05 0 0" size="0.012" material="leg_mat"/>
+        <body name="lr_femur" pos="0.05 0 0">
+          <joint name="lr_femur_joint" type="hinge" axis="0 1 0" range="-0.9 0.9"/>
+          <geom type="capsule" fromto="0 0 0 0.09 0 -0.02" size="0.011" material="leg_mat"/>
+          <body name="lr_tibia" pos="0.09 0 -0.02">
+            <joint name="lr_tibia_joint" type="hinge" axis="0 1 0" range="-1.2 0.2"/>
+            <geom type="capsule" fromto="0 0 0 0.11 0 -0.07" size="0.010" material="leg_mat"/>
+            <geom name="lr_foot" type="sphere" pos="0.11 0 -0.07" size="0.015" material="foot_mat"/>
+          </body>
+        </body>
+      </body>
+
+      <body name="rf_coxa" pos="0.08 -0.085 0">
+        <joint name="rf_coxa_joint" type="hinge" axis="0 0 -1" range="-0.8 0.8"/>
+        <geom type="capsule" fromto="0 0 0 0.05 0 0" size="0.012" material="leg_mat"/>
+        <body name="rf_femur" pos="0.05 0 0">
+          <joint name="rf_femur_joint" type="hinge" axis="0 -1 0" range="-0.9 0.9"/>
+          <geom type="capsule" fromto="0 0 0 0.09 0 0.02" size="0.011" material="leg_mat"/>
+          <body name="rf_tibia" pos="0.09 0 0.02">
+            <joint name="rf_tibia_joint" type="hinge" axis="0 -1 0" range="-1.2 0.2"/>
+            <geom type="capsule" fromto="0 0 0 0.11 0 0.07" size="0.010" material="leg_mat"/>
+            <geom name="rf_foot" type="sphere" pos="0.11 0 0.07" size="0.015" material="foot_mat"/>
+          </body>
+        </body>
+      </body>
+
+      <body name="rm_coxa" pos="0.0 -0.10 0">
+        <joint name="rm_coxa_joint" type="hinge" axis="0 0 -1" range="-0.8 0.8"/>
+        <geom type="capsule" fromto="0 0 0 0.05 0 0" size="0.012" material="leg_mat"/>
+        <body name="rm_femur" pos="0.05 0 0">
+          <joint name="rm_femur_joint" type="hinge" axis="0 -1 0" range="-0.9 0.9"/>
+          <geom type="capsule" fromto="0 0 0 0.09 0 0.02" size="0.011" material="leg_mat"/>
+          <body name="rm_tibia" pos="0.09 0 0.02">
+            <joint name="rm_tibia_joint" type="hinge" axis="0 -1 0" range="-1.2 0.2"/>
+            <geom type="capsule" fromto="0 0 0 0.11 0 0.07" size="0.010" material="leg_mat"/>
+            <geom name="rm_foot" type="sphere" pos="0.11 0 0.07" size="0.015" material="foot_mat"/>
+          </body>
+        </body>
+      </body>
+
+      <body name="rr_coxa" pos="-0.08 -0.085 0">
+        <joint name="rr_coxa_joint" type="hinge" axis="0 0 -1" range="-0.8 0.8"/>
+        <geom type="capsule" fromto="0 0 0 0.05 0 0" size="0.012" material="leg_mat"/>
+        <body name="rr_femur" pos="0.05 0 0">
+          <joint name="rr_femur_joint" type="hinge" axis="0 -1 0" range="-0.9 0.9"/>
+          <geom type="capsule" fromto="0 0 0 0.09 0 0.02" size="0.011" material="leg_mat"/>
+          <body name="rr_tibia" pos="0.09 0 0.02">
+            <joint name="rr_tibia_joint" type="hinge" axis="0 -1 0" range="-1.2 0.2"/>
+            <geom type="capsule" fromto="0 0 0 0.11 0 0.07" size="0.010" material="leg_mat"/>
+            <geom name="rr_foot" type="sphere" pos="0.11 0 0.07" size="0.015" material="foot_mat"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="lf_coxa_motor" joint="lf_coxa_joint" ctrlrange="-0.8 0.8"/>
+    <position name="lf_femur_motor" joint="lf_femur_joint" ctrlrange="-0.9 0.9"/>
+    <position name="lf_tibia_motor" joint="lf_tibia_joint" ctrlrange="-1.2 0.2"/>
+
+    <position name="lm_coxa_motor" joint="lm_coxa_joint" ctrlrange="-0.8 0.8"/>
+    <position name="lm_femur_motor" joint="lm_femur_joint" ctrlrange="-0.9 0.9"/>
+    <position name="lm_tibia_motor" joint="lm_tibia_joint" ctrlrange="-1.2 0.2"/>
+
+    <position name="lr_coxa_motor" joint="lr_coxa_joint" ctrlrange="-0.8 0.8"/>
+    <position name="lr_femur_motor" joint="lr_femur_joint" ctrlrange="-0.9 0.9"/>
+    <position name="lr_tibia_motor" joint="lr_tibia_joint" ctrlrange="-1.2 0.2"/>
+
+    <position name="rf_coxa_motor" joint="rf_coxa_joint" ctrlrange="-0.8 0.8"/>
+    <position name="rf_femur_motor" joint="rf_femur_joint" ctrlrange="-0.9 0.9"/>
+    <position name="rf_tibia_motor" joint="rf_tibia_joint" ctrlrange="-1.2 0.2"/>
+
+    <position name="rm_coxa_motor" joint="rm_coxa_joint" ctrlrange="-0.8 0.8"/>
+    <position name="rm_femur_motor" joint="rm_femur_joint" ctrlrange="-0.9 0.9"/>
+    <position name="rm_tibia_motor" joint="rm_tibia_joint" ctrlrange="-1.2 0.2"/>
+
+    <position name="rr_coxa_motor" joint="rr_coxa_joint" ctrlrange="-0.8 0.8"/>
+    <position name="rr_femur_motor" joint="rr_femur_joint" ctrlrange="-0.9 0.9"/>
+    <position name="rr_tibia_motor" joint="rr_tibia_joint" ctrlrange="-1.2 0.2"/>
+  </actuator>
+</mujoco>
