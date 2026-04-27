@@ -371,9 +371,9 @@ class HexapodSimple:
     DEFAULT_MODEL_PATH = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "assets",
-        "hexapod_trossen_new.xml",
+        # "hexapod_trossen_new.xml",
         # "hexapod_trossen_tiles_tiles.xml",
-        # "hexapod_trossen_rails.xml",
+        "hexapod_trossen_rails.xml",
     )
 
     def __init__(self, model_path: Optional[str] = None, frame_skip: int = 1):
@@ -907,6 +907,9 @@ class HexapodEnv(gym.Env):
         randomize_spawn: bool = True,
         spawn_range_xy: float = 10.0,
         randomize_spawn_yaw: bool = True,
+        enable_debug_prints: bool = False,
+        stuck_negative_direction_limit: int = 40,
+        stuck_penalty: float = -50.0,
     ):
         super().__init__()
 
@@ -920,6 +923,9 @@ class HexapodEnv(gym.Env):
         self.randomize_spawn = bool(randomize_spawn)
         self.spawn_range_xy = float(spawn_range_xy)
         self.randomize_spawn_yaw = bool(randomize_spawn_yaw)
+        self.enable_debug_prints = bool(enable_debug_prints)
+        self.stuck_negative_direction_limit = max(1, int(stuck_negative_direction_limit))
+        self.stuck_penalty = float(stuck_penalty)
 
         if seed is not None:
             np.random.seed(seed)
@@ -961,6 +967,7 @@ class HexapodEnv(gym.Env):
 
         self.step_count = 0
         self.last_action = None
+        self.negative_direction_step_count = 0
 
     def _build_joint_calibration(self):
         actuator_map = _build_actuator_index_map(self.sim_env)
@@ -1107,7 +1114,7 @@ class HexapodEnv(gym.Env):
 
         return action_ctrl
 
-    def _compute_reward(self) -> float:
+    def _compute_reward(self) -> Tuple[float, bool]:
         xyz_penalty = 0.0
         rpy_penalty = 0.0
 
@@ -1124,29 +1131,19 @@ class HexapodEnv(gym.Env):
         vy_actual = float(body_velocity_local[4])
         vx_cmd = float(self.vcmd_xy[0])
         vy_cmd = float(self.vcmd_xy[1])
-        direction_reward = 10 *(vx_cmd * vx_actual + vy_cmd * vy_actual)
+        direction_reward = 10 * (vx_cmd * vx_actual + vy_cmd * vy_actual)
+        if direction_reward < -0.01:
+            direction_reward *= 10.0
+            self.negative_direction_step_count += 1
+            if self.enable_debug_prints:
+                print("Got negative direction reward, direction_reward={:.3f}".format(direction_reward), "stuck_count={}".format(self.negative_direction_step_count))
+        elif direction_reward > 0.01:
+            self.negative_direction_step_count -= 1
+            if self.negative_direction_step_count < 0:
+                self.negative_direction_step_count = 0
 
-        # if self.last_action is not None:
-        #     _, _, x, y, z, roll, pitch, _ = self.last_action
-        #     print(f"Action for reward: x={x:.3f}, y={y:.3f}, z={z:.3f}, roll={roll:.1f}, pitch={pitch:.1f}")
-
-        #     pos_deadzone = 0.01
-        #     rot_deadzone = 5.0
-        #     pos_weight = 20.0
-        #     rot_weight = 0.0
-
-        #     dx = max(0.0, abs(float(x)) - pos_deadzone)
-        #     dy = max(0.0, abs(float(y)) - pos_deadzone)
-        #     dz = max(0.0, abs(float(z)) - pos_deadzone)
-        #     droll = max(0.0, abs(float(roll)) - rot_deadzone)
-        #     dpitch = max(0.0, abs(float(pitch)) - rot_deadzone)
-
-        #     print(f"Reward penalties: dx={dx:.3f}, dy={dy:.3f}, dz={dz:.3f}, droll={droll:.1f}, dpitch={dpitch:.1f}")   
-
-        #     xyz_penalty = pos_weight * (dx + dy + dz)
-        #     rpy_penalty = rot_weight * (droll + dpitch)
+        stuck_detected = self.negative_direction_step_count >= self.stuck_negative_direction_limit
             
-
         roll_rad, pitch_rad, yaw_rad = [float(v) for v in self.sim_env.get_imu_rpy()]
         desired_heading_rad = float(np.deg2rad(self._get_desired_heading_deg()))
         yaw_error = _angle_diff_rad(desired_heading_rad, yaw_rad)
@@ -1154,6 +1151,15 @@ class HexapodEnv(gym.Env):
         stability_reward = (np.exp(-3.0 * (roll_rad**2 + pitch_rad**2)) - 0.5)
         heading_reward = float(np.exp(-2.0 * (yaw_error ** 2)))
         reward = direction_reward + stability_reward + heading_reward
+        if stuck_detected:
+            reward += self.stuck_penalty
+            if self.enable_debug_prints:
+                print(
+                    "Stuck detected after {} negative direction steps; applying penalty {:.3f}".format(
+                        self.negative_direction_step_count,
+                        self.stuck_penalty,
+                    )
+                )
 
         # print(
         #     f"reward components: direction={direction_reward:.3f}, stability={stability_reward:.3f}, "
@@ -1161,7 +1167,7 @@ class HexapodEnv(gym.Env):
         #     f"rpy_penalty={rpy_penalty:.3f}, total_reward={reward:.3f}"
         # )
 
-        return reward
+        return reward, stuck_detected
 
     def reset(self, *, seed: Optional[int] = None, options=None):
         super().reset(seed=seed)
@@ -1187,6 +1193,7 @@ class HexapodEnv(gym.Env):
         self.sim_env.reset(seed=seed, options=spawn_options if spawn_options else None)
         self.step_count = 0
         self.last_action = None
+        self.negative_direction_step_count = 0
         self._sample_command()
         obs = self._get_obs()
         info = {
@@ -1205,33 +1212,34 @@ class HexapodEnv(gym.Env):
         self.sim_env.step(ctrl)
 
         obs = self._get_obs()
-        reward = self._compute_reward()
+        reward, stuck_detected = self._compute_reward()
 
         self.step_count += 1
         terminated = False
         truncated = self.step_count >= self.max_steps
 
         # Check for flipped robot: large roll/pitch or very low body height
-        try:
-            rpy = self.sim_env.get_imu_rpy()
-            if rpy is not None:
-                roll = float(rpy[0])
-                pitch = float(rpy[1])
-                # If roll or pitch exceed threshold (radians), consider flipped.
-                if abs(roll) > 1.2 or abs(pitch) > 1.2:
-                    terminated = True
-        except Exception:
-            # If IMU read fails, don't flip based on IMU
-            pass
+        rpy = self.sim_env.get_imu_rpy()
+        if rpy is not None:
+            roll = float(rpy[0])
+            pitch = float(rpy[1])
+            # If roll or pitch exceed threshold (radians), consider flipped.
+            if abs(roll) > 1.5 or abs(pitch) > 1.5:
+                terminated = True
+
+        if stuck_detected:
+            terminated = True
 
         # If terminated and auto_reset requested, perform reset now and return
         if terminated:
             obs, info = self.reset()
+            info["stuck_detected"] = bool(stuck_detected)
             return obs, reward, terminated, truncated, info
 
         info = {
             "vcmd_xy": self.vcmd_xy.copy(),
             "wcmd_yaw": float(self.wcmd_yaw),
+            "stuck_detected": bool(stuck_detected),
         }
         return obs, reward, terminated, truncated, info
 

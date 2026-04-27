@@ -1,0 +1,61 @@
+Problem : when i using cuda i jjust got 8000fps,  with cpu got 7000fps. if i increase env, eg 100, it willl say out of memmory, do you have suggestion how to make training more fast? because when i use cuda i got only 10% utilization
+
+
+Got it! Everything I said still applies — let me give you a clean English summary.
+
+---
+
+**Root cause: MuJoCo runs on CPU, not GPU.** Your 10% GPU utilization is expected — the neural net (4-dim obs → [256,256] → 8-dim action) is tiny, so GPU finishes instantly and just waits for `mj_step` + the Python IK loop. This is a CPU-bound simulation bottleneck, not a GPU one.
+
+**OOM at 100 envs:** SubprocVecEnv spawns 100 full separate processes, each with its own MuJoCo model + data + Python object tree. Memory blows up fast.
+
+---
+
+**Fixes, sorted by impact:**
+
+**1. Increase `frame_skip` — easiest win**
+
+Right now every RL step = 1 physics step. With `frame_skip=4`, the policy is called 4× less often relative to sim time, so you collect more *meaningful* data per second. Standard practice in locomotion:
+```bash
+python train_ppo.py --frame-skip 4
+```
+
+**2. Reduce num-envs, increase `n_steps`**
+
+16 envs with larger rollouts beats 50 envs with IPC overhead for MuJoCo:
+```bash
+--num-envs 16
+```
+And in `train_ppo.py`:
+```python
+n_steps=2048,
+batch_size=2048,
+```
+
+**3. Your obs space is only 4 values — this is a bigger problem**
+
+`_get_obs()` only returns the IMU quaternion. Your policy literally cannot learn velocity tracking because it has no velocity information. Add at minimum:
+- body linear velocity (3)
+- angular velocity (3)  
+- `vcmd_xy` + `wcmd_yaw` (3)
+- last action (8)
+
+This won't speed up FPS but will dramatically reduce the *total timesteps needed to converge*, which is what actually matters.
+
+**4. The 6-leg Python loop in `_compute_gait_action` is slow**
+
+Every `step()` call runs a Python `for` loop over 6 legs with scalar `float()` casts inside. Vectorizing this with NumPy ops would give ~20–30% sim speed improvement, but it's more work.
+
+---
+
+**Recommended quick start:**
+```bash
+python train_ppo.py --frame-skip 4 --num-envs 16
+```
+Change in `train_ppo.py`:
+```python
+n_steps=2048,
+batch_size=2048,
+```
+
+Frame skip 4 + richer observation space gives the best ROI. And to set expectations: even after all this, GPU utilization will stay low — that's just the nature of MuJoCo RL. The real metric to watch is **wall-clock time to convergence**, not FPS or GPU %.

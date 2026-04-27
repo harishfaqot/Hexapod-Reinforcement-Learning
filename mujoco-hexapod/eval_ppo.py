@@ -20,7 +20,7 @@ from envs.hexapod_env import HexapodEnv, HexapodTkUI
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="PPO/logs/PPO_34/ppo_hexapod.zip")
+    parser.add_argument("--model", type=str, default="PPO/logs/ppo_hexapod_last.zip")
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda", "auto"])
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--render", type=bool, default=True)
@@ -45,6 +45,7 @@ def main():
         command_mode=args.command_mode,
         vcmd_xy=(args.vcmd_x, args.vcmd_y),
         wcmd_yaw=args.wcmd_yaw,
+        enable_debug_prints=bool(args.render),
     )
 
     # Build UI for display only — DO NOT call ui.run() or ui._tick().
