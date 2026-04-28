@@ -1,16 +1,8 @@
 import argparse
 import os
-import sys
-
-import gym
 import numpy as np
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from PPO.hexapod_ppo_env import HexapodPPOEnv
-
+from envs.hexapod_env import HexapodEnv
 
 def main():
     parser = argparse.ArgumentParser()
@@ -23,7 +15,7 @@ def main():
     parser.add_argument("--vcmd-y", type=float, default=0.0)
     parser.add_argument("--wcmd-yaw", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--num-envs", type=int, default=8)
+    parser.add_argument("--num-envs", type=int, default=25)
     args = parser.parse_args()
 
     try:
@@ -39,7 +31,7 @@ def main():
 
     def make_env(rank: int):
         def _init():
-            env = HexapodPPOEnv(
+            env = HexapodEnv(
                 model_path=args.model_path,
                 max_steps=args.max_steps,
                 command_mode=args.command_mode,
@@ -47,14 +39,12 @@ def main():
                 wcmd_yaw=args.wcmd_yaw,
                 seed=args.seed + rank,
             )
-            return Monitor(env)
+            return Monitor(env)  # Use the HexapodEnv defined in envs.hexapod_env
+
 
         return _init
 
-    if args.num_envs <= 1:
-        vec_env = DummyVecEnv([make_env(0)])
-    else:
-        vec_env = SubprocVecEnv([make_env(i) for i in range(args.num_envs)])
+    vec_env = SubprocVecEnv([make_env(i) for i in range(args.num_envs)])        
 
     policy_kwargs = dict(net_arch=[256, 256])
     model = PPO(

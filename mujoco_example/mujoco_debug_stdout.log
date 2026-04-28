@@ -1,4 +1,0 @@
-MuJoCo native panel control mode
-Right panel should contain Actuators sliders.
-If panel hides, press Tab to toggle side UI.
-If simulation keeps resetting, press Space to pause and set sliders first.

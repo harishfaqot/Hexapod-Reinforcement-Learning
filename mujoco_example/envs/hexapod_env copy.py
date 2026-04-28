@@ -1,27 +1,14 @@
+from typing import Optional, Tuple
 import os
-import sys
-
-nexabots_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if nexabots_project_root not in sys.path:
-    sys.path.insert(0, nexabots_project_root)
-
-if os.name == "nt":
-    mujoco_bin = os.path.join(os.path.expanduser("~"), ".mujoco", "mujoco210", "bin")
-    if os.path.isdir(mujoco_bin):
-        os.environ["PATH"] = mujoco_bin + os.pathsep + os.environ.get("PATH", "")
-        try:
-            os.add_dll_directory(mujoco_bin)
-        except (AttributeError, FileNotFoundError):
-            pass
-
-from typing import Optional
 import tkinter as tk
 from tkinter import ttk
 
-import gym
-import mujoco_py
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
-from gym import spaces
+
+import mujoco
+import mujoco.viewer
 
 try:
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -101,6 +88,26 @@ def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
+def compute_heading_control(
+    desired_heading_deg: float,
+    current_yaw_rad: float,
+    vx: float,
+    vy: float,
+    k_p: float = 0.01,
+    max_turn_rate: float = 0.15,
+) -> float:
+    if vx == 0.0 and vy == 0.0 and desired_heading_deg == 0.0:
+        return 0.0
+
+    current_yaw_deg = float(current_yaw_rad) * 180.0 / np.pi
+    heading_error = -(float(desired_heading_deg) - current_yaw_deg + 180.0) % 360.0 - 180.0
+    return _clamp(float(k_p) * heading_error, -float(max_turn_rate), float(max_turn_rate))
+
+
+def _angle_diff_rad(target_rad: float, current_rad: float) -> float:
+    return float(np.arctan2(np.sin(target_rad - current_rad), np.cos(target_rad - current_rad)))
+
+
 def generate_movement(
     t: float,
     freq_hz: float,
@@ -134,7 +141,7 @@ def generate_movement(
     if vx == 0.0 and vy == 0.0 and vrot == 0.0:
         z = 0.0
 
-    return np.array([x, y, z], dtype=np.float32), progress
+    return np.array([x, y, z], dtype=np.float32)
 
 
 def inverse_kinematics(x: float, y: float, z: float):
@@ -272,11 +279,11 @@ def _build_actuator_index_map(env: "HexapodSimple"):
     for i in range(env.nu):
         joint_id = int(env.model.actuator_trnid[i][0])
         if joint_id >= 0:
-            joint_name = env.model.joint_id2name(joint_id)
+            joint_name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
             if joint_name:
                 name_to_index[joint_name] = i
 
-        actuator_name = env.model.actuator_id2name(i)
+        actuator_name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
         if actuator_name:
             name_to_index[actuator_name] = i
 
@@ -338,10 +345,6 @@ def _compute_neutral_ik_targets():
     return neutral
 
 
-def _joint_delta_sign_for_leg(leg_index: int, joint_name: str) -> float:
-    return 1.0
-
-
 def _quat_wxyz_to_rpy(quat_wxyz: np.ndarray) -> np.ndarray:
     w, x, y, z = [float(v) for v in quat_wxyz]
 
@@ -360,6 +363,133 @@ def _quat_wxyz_to_rpy(quat_wxyz: np.ndarray) -> np.ndarray:
     yaw = np.arctan2(siny_cosp, cosy_cosp)
 
     return np.array([roll, pitch, yaw], dtype=np.float32)
+
+
+class HexapodSimple:
+    """Minimal MuJoCo simulator wrapper used internally by HexapodEnv."""
+
+    DEFAULT_MODEL_PATH = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "assets",
+        # "hexapod_trossen_new.xml",
+        # "hexapod_trossen_tiles_tiles.xml",
+        "hexapod_trossen_rails.xml",
+    )
+
+    def __init__(self, model_path: Optional[str] = None, frame_skip: int = 1):
+        self.model_path = model_path or self.DEFAULT_MODEL_PATH
+        self.frame_skip = max(1, int(frame_skip))
+
+        self.model = mujoco.MjModel.from_xml_path(self.model_path)
+        self.data = mujoco.MjData(self.model)
+        self.viewer = None
+        self.camera_follow_enabled = True
+        self.camera_follow_body_id = self._resolve_body_id("torso")
+        self.imu_sensor_id = self._resolve_sensor_id("imu_quat")
+
+        self.nu = int(self.model.nu)
+        self.nq = int(self.model.nq)
+        self.nv = int(self.model.nv)
+
+        if (not DISABLE_SOFT_LIMITS) and np.any(self.model.actuator_ctrllimited):
+            ctrl_low = self.model.actuator_ctrlrange[:, 0].copy()
+            ctrl_high = self.model.actuator_ctrlrange[:, 1].copy()
+        else:
+            ctrl_low = -np.full(self.nu, 1e6, dtype=np.float32)
+            ctrl_high = np.full(self.nu, 1e6, dtype=np.float32)
+
+        self.action_space = spaces.Box(low=ctrl_low, high=ctrl_high, dtype=np.float32)
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self.nq + self.nv,),
+            dtype=np.float32,
+        )
+
+    def _resolve_sensor_id(self, sensor_name: str) -> Optional[int]:
+        sensor_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, sensor_name)
+        return int(sensor_id) if sensor_id >= 0 else None
+
+    def _resolve_body_id(self, body_name: str) -> int:
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+        if body_id >= 0:
+            return int(body_id)
+        return 1 if self.model.nbody > 1 else 0
+
+    def _update_camera_follow(self):
+        if self.viewer is None:
+            return
+        if self.camera_follow_enabled:
+            body_id = int(self.camera_follow_body_id)
+            self.viewer.cam.trackbodyid = body_id
+            self.viewer.cam.lookat[:] = np.asarray(self.data.xpos[body_id], dtype=np.float32)
+        else:
+            self.viewer.cam.trackbodyid = -1
+
+    def _get_obs(self) -> np.ndarray:
+        qpos = np.asarray(self.data.qpos, dtype=np.float32)
+        qvel = np.asarray(self.data.qvel, dtype=np.float32)
+        return np.concatenate([qpos, qvel], axis=0)
+
+    def get_imu_quat(self) -> np.ndarray:
+        if self.imu_sensor_id is not None:
+            adr = int(self.model.sensor_adr[self.imu_sensor_id])
+            dim = int(self.model.sensor_dim[self.imu_sensor_id])
+            if dim >= 4:
+                return np.asarray(self.data.sensordata[adr: adr + 4], dtype=np.float32)
+        return np.asarray(self.data.xquat[int(self.camera_follow_body_id)], dtype=np.float32)
+
+    def get_imu_rpy(self) -> np.ndarray:
+        return _quat_wxyz_to_rpy(self.get_imu_quat())
+
+    def reset(self, *, seed=None, options=None):
+        mujoco.mj_resetData(self.model, self.data)
+
+        if options is not None:
+            # Set random spawn XY position
+            if "init_xy" in options:
+                xy = options["init_xy"]
+                self.data.qpos[0] = float(xy[0])
+                self.data.qpos[1] = float(xy[1])
+
+            # Set random spawn yaw (optional)
+            if "init_yaw" in options:
+                yaw = float(options["init_yaw"])
+                self.data.qpos[3] = float(np.cos(yaw / 2.0))   # w
+                self.data.qpos[4] = 0.0                          # x
+                self.data.qpos[5] = 0.0                          # y
+                self.data.qpos[6] = float(np.sin(yaw / 2.0))   # z
+
+            # Re-forward after manual qpos edit
+            mujoco.mj_forward(self.model, self.data)
+
+        return self._get_obs(), {}
+
+    def step(self, action):
+        action = np.asarray(action, dtype=np.float32).reshape(-1)
+        if action.shape[0] != self.nu:
+            raise ValueError(f"Expected action shape ({self.nu},), got {action.shape}")
+
+        self.data.ctrl[:] = np.clip(action, self.action_space.low, self.action_space.high)
+        for _ in range(self.frame_skip):
+            mujoco.mj_step(self.model, self.data)
+
+        return self._get_obs(), 0.0, False, False, {}
+
+    def render(self, mode="human"):
+        if mode != "human":
+            raise NotImplementedError("Only human render mode is supported.")
+        if self.viewer is None:
+            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+            self.viewer.cam.distance = 1.6
+            self.viewer.cam.elevation = -25
+        self._update_camera_follow()
+        self.viewer.sync()
+
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+            self.viewer = None
 
 
 class _MatplotlibPlot:
@@ -420,8 +550,7 @@ class HexapodTkUI:
         self.actuator_map = _build_actuator_index_map(env)
         self.nominal_ik_targets = _compute_neutral_ik_targets()
 
-        state0 = env.sim.get_state()
-        qpos0 = np.asarray(state0.qpos, dtype=np.float32)
+        qpos0 = np.asarray(env.data.qpos, dtype=np.float32)
 
         self.joint_calibration = {}
         for leg_i, leg in enumerate(LEG_ORDER):
@@ -440,7 +569,7 @@ class HexapodTkUI:
                     "nominal_ik": float(self.nominal_ik_targets[leg][joint_name]),
                     "low": float(info["low"]),
                     "high": float(info["high"]),
-                    "delta_sign": _joint_delta_sign_for_leg(leg_i, joint_name),
+                    "delta_sign": 1.0,
                 }
 
         self.air_mode = False
@@ -508,7 +637,7 @@ class HexapodTkUI:
         self.yaw_slider = _make_slider(tab, "yaw", -60.0, 60.0, 0.0, row=6, col=1, resolution=0.1)
 
         control_bar = tk.Frame(tab)
-        control_bar.grid(row=8, column=0, columnspan=2, padx=8, pady=10, sticky="we")
+        control_bar.grid(row=9, column=0, columnspan=2, padx=8, pady=10, sticky="we")
         tk.Button(control_bar, text="Reset leg offsets", command=self._reset_leg_offsets).pack(side="left", padx=(0, 6))
         tk.Button(control_bar, text="Reset sliders", command=self._reset_sliders).pack(side="left", padx=(0, 16))
         tk.Label(control_bar, text="Leg control mode:").pack(side="left", padx=(0, 6))
@@ -517,10 +646,10 @@ class HexapodTkUI:
         tk.Checkbutton(control_bar, text="Camera follow", variable=self.camera_follow_var).pack(side="left", padx=(16, 0))
 
         tk.Label(tab, text="IMU telemetry (rad)", font=("Arial", 11, "bold")).grid(
-            row=9, column=0, columnspan=2, padx=8, pady=(10, 4), sticky="w"
+            row=10, column=0, columnspan=2, padx=8, pady=(10, 4), sticky="w"
         )
         imu_frame = tk.Frame(tab)
-        imu_frame.grid(row=10, column=0, columnspan=2, padx=8, pady=(0, 6), sticky="we")
+        imu_frame.grid(row=11, column=0, columnspan=2, padx=8, pady=(0, 6), sticky="we")
         imu_frame.grid_columnconfigure(0, weight=1)
         imu_frame.grid_columnconfigure(1, weight=1)
 
@@ -632,28 +761,25 @@ class HexapodTkUI:
         self.env.camera_follow_enabled = bool(self.camera_follow_var.get())
 
         if self.air_mode:
-            self.env.sim.data.qpos[0:3] = np.array([0.0, 0.0, self.air_height], dtype=np.float32)
-            self.env.sim.data.qpos[3:7] = self.air_quat
-            self.env.sim.data.qvel[0:6] = 0.0
-            self.env.sim.forward()
+            self.env.data.qpos[0:3] = np.array([0.0, 0.0, self.air_height], dtype=np.float32)
+            self.env.data.qpos[3:7] = self.air_quat
+            self.env.data.qvel[0:6] = 0.0
+            mujoco.mj_forward(self.env.model, self.env.data)
 
         global FOOT_HOME_RADIAL, FOOT_HOME_Z
         FOOT_HOME_RADIAL = float(self.foot_home_radial_slider.get())
         FOOT_HOME_Z = float(self.foot_home_z_slider.get())
 
-        t = float(self.env.sim.data.time)
+        t = float(self.env.data.time)
         vx = float(self.vx_slider.get())
         vy = float(self.vy_slider.get())
-        # Heading control: v_rot is proportional to heading error (simple P controller)
         desired_heading = float(self.heading_slider.get())
-        if vx == 0.0 and vy == 0.0 and desired_heading == 0.0:
-            v_rot = 0.0
-        else:  
-            current_yaw = float(self.env.get_imu_rpy()[2]) * 180.0 / np.pi  # degrees
-            heading_error = -(desired_heading - current_yaw + 180) % 360 - 180  # shortest path
-            k_p = 0.01  # proportional gain, tune as needed
-            v_rot = k_p * heading_error
-            v_rot = _clamp(v_rot, -0.15, 0.15)
+        v_rot = compute_heading_control(
+            desired_heading_deg=desired_heading,
+            current_yaw_rad=float(self.env.get_imu_rpy()[2]),
+            vx=vx,
+            vy=vy,
+        )
 
         self.v_rot_slider.config(state="normal")
         self.v_rot_slider.set(v_rot)
@@ -674,7 +800,7 @@ class HexapodTkUI:
             float(self.yaw_slider.get()),
         )
 
-        action = np.asarray(self.env.sim.data.ctrl.copy(), dtype=np.float32)
+        action = np.asarray(self.env.data.ctrl.copy(), dtype=np.float32)
         if self.control_mode.get() == "joint":
             for leg in LEG_ORDER:
                 for joint_name in ["coxa", "femur", "tibia"]:
@@ -696,7 +822,7 @@ class HexapodTkUI:
         body_leg_positions = body_kinematics(body_position, body_orientation)
 
         for i, leg in enumerate(LEG_ORDER):
-            movement, _ = generate_movement(
+            movement = generate_movement(
                 t=t,
                 freq_hz=cpg_hz,
                 phase_lag_rad=gait_phase_lag,
@@ -761,148 +887,368 @@ class HexapodTkUI:
         self.root.mainloop()
 
 
-class HexapodSimple(gym.Env):
-    """
-    Minimal hexapod environment for direct joint-position control.
-
-    Action:
-        np.ndarray shape (nu,) in actuator units (target joint positions).
-    Observation:
-        np.ndarray of concatenated qpos and qvel.
-    """
-
-    DEFAULT_MODEL_PATH = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "assets",
-        "hexapod_trossen_new.xml",
-        # "hexapod_trossen_terrain_2.xml",
-    )
+class HexapodEnv(gym.Env):
+    """Training wrapper with gait-parameter actions."""
 
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, model_path: Optional[str] = None, frame_skip: int = 1):
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        frame_skip: int = 1,
+        max_steps: int = 1000,
+        command_mode: str = "fixed",
+        vcmd_xy: Tuple[float, float] = (0.1, 0.0),
+        wcmd_yaw: float = 0.0,
+        command_range_xy: float = 0.2,
+        command_range_yaw: float = 0.6,
+        seed: Optional[int] = None,
+        tk_ui: bool = False,
+        randomize_spawn: bool = True,
+        spawn_range_xy: float = 1.0,
+        randomize_spawn_yaw: bool = True,
+    ):
         super().__init__()
 
-        self.model_path = model_path or self.DEFAULT_MODEL_PATH
-        self.frame_skip = int(max(1, frame_skip))
+        self.sim_env = HexapodSimple(model_path=model_path, frame_skip=frame_skip)
+        self.max_steps = int(max_steps)
+        self.command_mode = command_mode
+        self.vcmd_xy = np.array(vcmd_xy, dtype=np.float32)
+        self.wcmd_yaw = float(wcmd_yaw)
+        self.command_range_xy = float(command_range_xy)
+        self.command_range_yaw = float(command_range_yaw)
+        self.randomize_spawn = bool(randomize_spawn)
+        self.spawn_range_xy = float(spawn_range_xy)
+        self.randomize_spawn_yaw = bool(randomize_spawn_yaw)
 
-        self.model = mujoco_py.load_model_from_path(self.model_path)
-        self.sim = mujoco_py.MjSim(self.model)
-        self.viewer = None
-        self.camera_follow_enabled = True
-        self.camera_follow_body_id = self._resolve_body_id("torso")
-        self.imu_sensor_id = self._resolve_sensor_id("imu_quat")
+        if seed is not None:
+            np.random.seed(seed)
 
-        self.nu = int(self.model.nu)
-        self.nq = int(self.model.nq)
-        self.nv = int(self.model.nv)
+        # Optionally create a Tk UI (same UI used by hexapod_simple) so sliders
+        # like heading and v_rot are available on the env instance.
+        self.ui = None
+        if tk_ui:
+            try:
+                self.ui = HexapodTkUI(self.sim_env)
+                # expose ui sliders on the env for backward compatibility
+                if hasattr(self.ui, "heading_slider"):
+                    self.heading_slider = self.ui.heading_slider
+                if hasattr(self.ui, "v_rot_slider"):
+                    self.v_rot_slider = self.ui.v_rot_slider
+            except Exception:
+                # UI creation is best-effort; don't fail env construction if it
+                # can't be created (e.g., headless server)
+                self.ui = None
 
-        if (not DISABLE_SOFT_LIMITS) and self.model.actuator_ctrllimited is not None and np.any(self.model.actuator_ctrllimited):
-            ctrl_low = self.model.actuator_ctrlrange[:, 0].copy()
-            ctrl_high = self.model.actuator_ctrlrange[:, 1].copy()
-        else:
-            ctrl_low = -np.full(self.nu, 1e6, dtype=np.float32)
-            ctrl_high = np.full(self.nu, 1e6, dtype=np.float32)
+        self._build_joint_calibration()
+        self.body_id = int(self.sim_env.camera_follow_body_id)
 
-        self.action_space = spaces.Box(low=ctrl_low, high=ctrl_high, dtype=np.float32)
-
-        obs_dim = self.nq + self.nv
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(obs_dim,),
+        # Action: step height, duty, body x,y,z, roll, pitch, yaw
+        act_low = np.array([0.03, 0.3, -0.05, -0.05, -0.05, -30.0, -30.0, -30.0], dtype=np.float32)
+        act_high = np.array([0.1, 0.6, 0.05, 0.05, 0.05, 30.0, 30.0, 30.0], dtype=np.float32)
+        self._action_low = act_low
+        self._action_high = act_high
+        self._action_scale = 0.5 * (act_high - act_low)
+        self._action_bias = 0.5 * (act_high + act_low)
+        self.action_space = spaces.Box(
+            low=-np.ones_like(act_low, dtype=np.float32),
+            high=np.ones_like(act_high, dtype=np.float32),
             dtype=np.float32,
         )
 
-    def _resolve_sensor_id(self, sensor_name: str) -> Optional[int]:
-        try:
-            return int(self.model.sensor_name2id(sensor_name))
-        except Exception:
-            return None
+        # Observation: body quaternion (w, x, y, z)
+        self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
 
-    def _resolve_body_id(self, body_name: str) -> int:
-        try:
-            return int(self.model.body_name2id(body_name))
-        except Exception:
-            return 1 if self.model.nbody > 1 else 0
+        self.step_count = 0
+        self.last_action = None
 
-    def _update_camera_follow(self):
-        if self.viewer is None:
-            return
+    def _build_joint_calibration(self):
+        actuator_map = _build_actuator_index_map(self.sim_env)
+        nominal_ik_targets = _compute_neutral_ik_targets()
 
-        if self.camera_follow_enabled:
-            body_id = int(self.camera_follow_body_id)
-            self.viewer.cam.trackbodyid = body_id
-            body_pos = np.asarray(self.sim.data.body_xpos[body_id], dtype=np.float32)
-            self.viewer.cam.lookat[:] = body_pos
-        else:
-            self.viewer.cam.trackbodyid = -1
+        qpos0 = np.asarray(self.sim_env.data.qpos, dtype=np.float32)
+
+        self.joint_calibration = {}
+        for leg_i, leg in enumerate(LEG_ORDER):
+            self.joint_calibration[leg] = {}
+            for joint_name in ["coxa", "femur", "tibia"]:
+                actuator_idx = actuator_map[leg][joint_name]
+                if actuator_idx is None:
+                    self.joint_calibration[leg][joint_name] = None
+                    continue
+
+                info = _joint_info_for_actuator(self.sim_env, actuator_idx)
+                neutral_joint_qpos = float(qpos0[info["qpos_adr"]])
+                self.joint_calibration[leg][joint_name] = {
+                    "actuator_idx": actuator_idx,
+                    "neutral_joint_qpos": neutral_joint_qpos,
+                    "nominal_ik": float(nominal_ik_targets[leg][joint_name]),
+                    "low": float(info["low"]),
+                    "high": float(info["high"]),
+                    "delta_sign": 1.0,
+                }
+
+    def _sample_command(self):
+        if self.command_mode == "random":
+            self.vcmd_xy = np.random.uniform(
+                -self.command_range_xy, self.command_range_xy, size=(2,)
+            ).astype(np.float32)
+            self.wcmd_yaw = float(np.random.uniform(-self.command_range_yaw, self.command_range_yaw))
+
+    def _get_desired_heading_deg(self) -> float:
+        ui = getattr(self, "ui", None)
+        if ui is not None and hasattr(ui, "heading_slider"):
+            return float(ui.heading_slider.get())
+        if hasattr(self, "heading_slider"):
+            return float(self.heading_slider.get())
+        return 0.0
+
+    def _denormalize_action(self, action: np.ndarray) -> np.ndarray:
+        action = np.asarray(action, dtype=np.float32).reshape(-1)
+        if action.shape[0] != self.action_space.shape[0]:
+            raise ValueError(f"Expected action shape ({self.action_space.shape[0]},), got {action.shape}")
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        return (self._action_bias + action * self._action_scale).astype(np.float32)
 
     def _get_obs(self) -> np.ndarray:
-        state = self.sim.get_state()
-        qpos = np.asarray(state.qpos, dtype=np.float32)
-        qvel = np.asarray(state.qvel, dtype=np.float32)
-        return np.concatenate([qpos, qvel], axis=0)
+        return self.sim_env.get_imu_quat().astype(np.float32)
 
-    def get_imu_quat(self) -> np.ndarray:
-        if self.imu_sensor_id is not None:
-            adr = int(self.model.sensor_adr[self.imu_sensor_id])
-            dim = int(self.model.sensor_dim[self.imu_sensor_id])
-            if dim >= 4:
-                return np.asarray(self.sim.data.sensordata[adr: adr + 4], dtype=np.float32)
+    def _get_cpg_hz(self) -> float:
+        ui = getattr(self, "ui", None)
+        if ui is not None and hasattr(ui, "cpg_slider"):
+            try:
+                return max(0.1, float(ui.cpg_slider.get()))
+            except Exception:
+                pass
+        return 1.0
 
-        body_id = int(self.camera_follow_body_id)
-        return np.asarray(self.sim.data.body_xquat[body_id], dtype=np.float32)
+    def _get_gait_phase_lag(self) -> float:
+        ui = getattr(self, "ui", None)
+        if ui is not None and hasattr(ui, "gait_slider"):
+            try:
+                return float(ui.gait_slider.get())
+            except Exception:
+                pass
+        return float(np.pi)
 
-    def get_imu_rpy(self) -> np.ndarray:
-        quat = self.get_imu_quat()
-        return _quat_wxyz_to_rpy(quat)
+    def _compute_gait_action(self, action: np.ndarray) -> np.ndarray:
+        step_height, duty, x, y, z, roll, pitch, yaw = action
+        cpg_hz = self._get_cpg_hz()
+        gait_phase_lag = self._get_gait_phase_lag()
+        body_position = (float(x), float(y), float(z))
+        body_orientation = (float(roll), float(pitch), float(yaw))
 
-    def reset(self):
-        self.sim.reset()
-        return self._get_obs()
+        # Commanded velocity drives gait; policy adapts other gait/body parameters.
+        vx = float(self.vcmd_xy[0])
+        vy = float(self.vcmd_xy[1])
+        desired_heading = self._get_desired_heading_deg()
+        ui = getattr(self, "ui", None)
+
+        v_rot = compute_heading_control(
+            desired_heading_deg=desired_heading,
+            current_yaw_rad=float(self.sim_env.get_imu_rpy()[2]),
+            vx=vx,
+            vy=vy
+        )
+
+        # Update UI v_rot display if available (prefer ui, then env attribute)
+        if ui is not None and hasattr(ui, "v_rot_slider"):
+            ui.v_rot_slider.config(state="normal")
+            ui.v_rot_slider.set(v_rot)
+            ui.v_rot_slider.config(state="disabled")
+        elif hasattr(self, "v_rot_slider"):
+            self.v_rot_slider.config(state="normal")
+            self.v_rot_slider.set(v_rot)
+            self.v_rot_slider.config(state="disabled")
+
+        t = float(self.sim_env.data.time)
+        body_leg_positions = body_kinematics(body_position, body_orientation)
+
+        action_ctrl = np.asarray(self.sim_env.data.ctrl.copy(), dtype=np.float32)
+
+        for i, leg in enumerate(LEG_ORDER):
+            movement = generate_movement(
+                t=t,
+                freq_hz=float(cpg_hz),
+                phase_lag_rad=gait_phase_lag,
+                step_height=float(step_height),
+                body_movement=(vx, vy, v_rot),
+                leg_index=i,
+                duty_factor=float(duty),
+            )
+
+            leg_base = np.array(body_leg_positions[i], dtype=np.float32)
+            nominal_leg_base = np.array(LEG_BASE_POSITIONS[i], dtype=np.float32)
+
+            target_foot = leg_base + _foot_home_offset_body(i) + movement
+            ik_x, ik_y, ik_z = _body_target_to_leg_ik_frame(target_foot, nominal_leg_base, i)
+
+            coxa, femur, tibia = inverse_kinematics(
+                ik_x,
+                ik_y,
+                ik_z,
+            )
+
+            desired_ik = {
+                "coxa": coxa,
+                "femur": femur,
+                "tibia": tibia,
+            }
+
+            for joint_name, ik_value in desired_ik.items():
+                calib = self.joint_calibration[leg][joint_name]
+                if calib is None:
+                    continue
+
+                delta = (float(ik_value) - calib["nominal_ik"]) * calib["delta_sign"]
+                target_joint = calib["neutral_joint_qpos"] + delta
+                target_joint = _clamp(target_joint, calib["low"], calib["high"])
+                action_ctrl[calib["actuator_idx"]] = target_joint
+
+        return action_ctrl
+
+    def _compute_reward(self) -> float:
+        xyz_penalty = 0.0
+        rpy_penalty = 0.0
+
+        body_velocity_local = np.zeros(6, dtype=np.float64)
+        mujoco.mj_objectVelocity(
+            self.sim_env.model,
+            self.sim_env.data,
+            mujoco.mjtObj.mjOBJ_BODY,
+            self.body_id,
+            body_velocity_local,
+            1,
+        )
+        vx_actual = float(body_velocity_local[3])
+        vy_actual = float(body_velocity_local[4])
+        vx_cmd = float(self.vcmd_xy[0])
+        vy_cmd = float(self.vcmd_xy[1])
+        direction_reward = vx_cmd * vx_actual + vy_cmd * vy_actual
+
+        # if self.last_action is not None:
+        #     _, _, x, y, z, roll, pitch, _ = self.last_action
+        #     print(f"Action for reward: x={x:.3f}, y={y:.3f}, z={z:.3f}, roll={roll:.1f}, pitch={pitch:.1f}")
+
+        #     pos_deadzone = 0.01
+        #     rot_deadzone = 5.0
+        #     pos_weight = 20.0
+        #     rot_weight = 0.0
+
+        #     dx = max(0.0, abs(float(x)) - pos_deadzone)
+        #     dy = max(0.0, abs(float(y)) - pos_deadzone)
+        #     dz = max(0.0, abs(float(z)) - pos_deadzone)
+        #     droll = max(0.0, abs(float(roll)) - rot_deadzone)
+        #     dpitch = max(0.0, abs(float(pitch)) - rot_deadzone)
+
+        #     print(f"Reward penalties: dx={dx:.3f}, dy={dy:.3f}, dz={dz:.3f}, droll={droll:.1f}, dpitch={dpitch:.1f}")   
+
+        #     xyz_penalty = pos_weight * (dx + dy + dz)
+        #     rpy_penalty = rot_weight * (droll + dpitch)
+            
+
+        roll_rad, pitch_rad, yaw_rad = [float(v) for v in self.sim_env.get_imu_rpy()]
+        desired_heading_rad = float(np.deg2rad(self._get_desired_heading_deg()))
+        yaw_error = _angle_diff_rad(desired_heading_rad, yaw_rad)
+
+        stability_reward = 2 * (np.exp(-3.0 * (roll_rad**2 + pitch_rad**2)) - 0.5)
+        heading_reward = float(np.exp(-2.0 * (yaw_error ** 2)))
+        reward = direction_reward + stability_reward + heading_reward
+
+        # print(
+        #     f"reward components: direction={direction_reward:.3f}, stability={stability_reward:.3f}, "
+        #     f"heading={heading_reward:.3f}, xyz_penalty={xyz_penalty:.3f}, "
+        #     f"rpy_penalty={rpy_penalty:.3f}, total_reward={reward:.3f}"
+        # )
+
+        return reward
+
+    def reset(self, *, seed: Optional[int] = None, options=None):
+        super().reset(seed=seed)
+        if seed is not None:
+            np.random.seed(seed)
+
+        # Build spawn options for HexapodSimple
+        spawn_options: dict = {}
+
+        if self.randomize_spawn:
+            spawn_x = float(np.random.uniform(-self.spawn_range_xy, self.spawn_range_xy))
+            spawn_y = float(np.random.uniform(-self.spawn_range_xy, self.spawn_range_xy))
+            spawn_options["init_xy"] = [spawn_x, spawn_y]
+        else:
+            spawn_x, spawn_y = 0.0, 0.0
+
+        if self.randomize_spawn_yaw:
+            spawn_yaw = float(np.random.uniform(-np.pi, np.pi))
+            spawn_options["init_yaw"] = spawn_yaw
+        else:
+            spawn_yaw = 0.0
+
+        self.sim_env.reset(seed=seed, options=spawn_options if spawn_options else None)
+        self.step_count = 0
+        self.last_action = None
+        self._sample_command()
+        obs = self._get_obs()
+        info = {
+            "vcmd_xy": self.vcmd_xy.copy(),
+            "wcmd_yaw": float(self.wcmd_yaw),
+            "spawn_xy": [spawn_x, spawn_y],
+            "spawn_yaw": spawn_yaw,
+        }
+        return obs, info
 
     def step(self, action):
-        action = np.asarray(action, dtype=np.float32).reshape(-1)
-        if action.shape[0] != self.nu:
-            raise ValueError(f"Expected action shape ({self.nu},), got {action.shape}")
+        action = self._denormalize_action(action)
+        self.last_action = action.copy()
 
-        clipped = np.clip(action, self.action_space.low, self.action_space.high)
-        self.sim.data.ctrl[:] = clipped
-
-        for _ in range(self.frame_skip):
-            self.sim.step()
+        ctrl = self._compute_gait_action(action)
+        self.sim_env.step(ctrl)
 
         obs = self._get_obs()
-        reward = 0.0
-        done = False
-        info = {}
-        return obs, reward, done, info
+        reward = self._compute_reward()
 
-    def set_joint_positions(self, joint_positions):
-        return self.step(joint_positions)
+        self.step_count += 1
+        terminated = False
+        truncated = self.step_count >= self.max_steps
+
+        # Check for flipped robot: large roll/pitch or very low body height
+        try:
+            rpy = self.sim_env.get_imu_rpy()
+            if rpy is not None:
+                roll = float(rpy[0])
+                pitch = float(rpy[1])
+                # If roll or pitch exceed threshold (radians), consider flipped.
+                if abs(roll) > 1.2 or abs(pitch) > 1.2:
+                    terminated = True
+        except Exception:
+            # If IMU read fails, don't flip based on IMU
+            pass
+
+        # If terminated and auto_reset requested, perform reset now and return
+        if terminated:
+            obs, info = self.reset()
+            return obs, reward, terminated, truncated, info
+
+        info = {
+            "vcmd_xy": self.vcmd_xy.copy(),
+            "wcmd_yaw": float(self.wcmd_yaw),
+        }
+        return obs, reward, terminated, truncated, info
 
     def render(self, mode="human"):
-        if mode != "human":
-            raise NotImplementedError("Only human render mode is supported.")
-        if self.viewer is None:
-            self.viewer = mujoco_py.MjViewer(self.sim)
-            self.viewer.cam.distance = 1.6
-            self.viewer.cam.elevation = -25
-        self._update_camera_follow()
-        self.viewer.render()
+        return self.sim_env.render(mode=mode)
 
     def close(self):
-        self.viewer = None
+        self.sim_env.close()
 
 
 if __name__ == "__main__":
-    env = HexapodSimple()
+    env = HexapodEnv()
     env.reset()
 
-    print("HexapodSimple ready")
-    print(f"Action size (nu): {env.nu}")
+    print("HexapodEnv ready")
+    print(f"Action size (nu): {env.sim_env.nu}")
     print("Tkinter IK controller ready. Use sliders to drive body and gait.")
 
-    ui = HexapodTkUI(env)
+    ui = HexapodTkUI(env.sim_env)
     ui.run()
