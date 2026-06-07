@@ -1,6 +1,6 @@
 import argparse
 import os
-from envs.hexapod_env import HexapodEnv
+from envs.hexapod_env_direct import HexapodEnvDirect
 
 def main():
     print("Training PPO on HexapodEnv")
@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--vcmd-y", type=float, default=0.0)
     parser.add_argument("--wcmd-yaw", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--num-envs", type=int, default=20)
+    parser.add_argument("--num-envs", type=int, default=30)
     args = parser.parse_args()
 
     try:
@@ -33,7 +33,7 @@ def main():
 
     def make_env(rank: int):
         def _init():
-            env = HexapodEnv(
+            env = HexapodEnvDirect(
                 model_path=args.model_path,
                 max_steps=args.max_steps,
                 command_mode=args.command_mode,
@@ -41,7 +41,6 @@ def main():
                 wcmd_yaw=args.wcmd_yaw,
                 frame_skip=args.frame_skip,
                 seed=args.seed + rank,
-                enable_debug_prints=False,
             )
             return Monitor(env)
 

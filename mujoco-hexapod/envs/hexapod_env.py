@@ -1148,7 +1148,7 @@ class HexapodEnv(gym.Env):
         desired_heading_rad = float(np.deg2rad(self._get_desired_heading_deg()))
         yaw_error = _angle_diff_rad(desired_heading_rad, yaw_rad)
 
-        stability_reward = (np.exp(-3.0 * (roll_rad**2 + pitch_rad**2)) - 0.5)
+        stability_reward = (np.exp(-3.0 * (roll_rad**2 + pitch_rad**2)))
         heading_reward = float(np.exp(-2.0 * (yaw_error ** 2)))
         reward = direction_reward + stability_reward + heading_reward
         if stuck_detected:
@@ -1251,6 +1251,7 @@ class HexapodEnv(gym.Env):
 
 
 if __name__ == "__main__":
+    print("Starting Env...")
     env = HexapodEnv()
     env.reset()
 

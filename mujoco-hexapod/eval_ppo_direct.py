@@ -17,7 +17,7 @@ from envs.hexapod_env_direct import HexapodEnvDirect
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate trained hexapod policy")
-    parser.add_argument("--model-path", type=str, default="PPO/logs/ppo_hexapod.zip")
+    parser.add_argument("--model-path", type=str, default="PPO/logs/PPO_3/ppo_hexapod.zip")
     parser.add_argument("--xml-path",      type=str,   default=None,         help="Path to MuJoCo XML (default: asset in env)")
     parser.add_argument("--episodes",      type=int,   default=5,            help="Number of episodes to run")
     parser.add_argument("--max-steps",     type=int,   default=10000,         help="Max steps per episode")
@@ -28,13 +28,14 @@ def parse_args():
     parser.add_argument("--wcmd-yaw",      type=float, default=0.0,          help="Yaw rate command")
     parser.add_argument("--no-render",     action="store_true",               help="Disable MuJoCo viewer")
     parser.add_argument("--render-every",  type=int,   default=1,            help="Render every N steps (1=every step)")
+    parser.add_argument("--no-real-time",  action="store_true",               help="Run rendered eval as fast as possible instead of real time")
     parser.add_argument("--deterministic", action="store_true", default=True, help="Use deterministic policy")
     parser.add_argument("--seed",          type=int,   default=42)
     parser.add_argument("--device",        type=str,   default="cpu",        choices=["cpu", "cuda", "auto"])
     return parser.parse_args()
 
 
-def run_episode(model, env, render: bool, render_every: int, deterministic: bool):
+def run_episode(model, env, render: bool, render_every: int, deterministic: bool, real_time: bool):
     obs, info = env.reset()
     episode_reward = 0.0
     step = 0
@@ -45,6 +46,7 @@ def run_episode(model, env, render: bool, render_every: int, deterministic: bool
     vy_actuals = []
 
     t_start = time.perf_counter()
+    sim_dt = float(env.model.opt.timestep) * float(env.frame_skip)
 
     while not done:
         action, _ = model.predict(obs, deterministic=deterministic)
@@ -60,6 +62,13 @@ def run_episode(model, env, render: bool, render_every: int, deterministic: bool
 
         if render and (step % render_every == 0):
             env.render()
+
+        if render and real_time:
+            sim_elapsed = step * sim_dt
+            wall_elapsed = time.perf_counter() - t_start
+            remaining = sim_elapsed - wall_elapsed
+            if remaining > 0:
+                time.sleep(remaining)
 
     elapsed = time.perf_counter() - t_start
     fps = step / elapsed if elapsed > 0 else 0
@@ -113,6 +122,7 @@ def main():
     args = parse_args()
 
     render = not args.no_render
+    real_time = render and not args.no_real_time
 
     # ── Build env ─────────────────────────────────────────────────────────────
     env = HexapodEnvDirect(
@@ -132,6 +142,8 @@ def main():
     print(f"Obs dim: {env.observation_space.shape}  |  Action dim: {env.action_space.shape}")
     print(f"Command: vx={args.vcmd_x}  vy={args.vcmd_y}  wyaw={args.wcmd_yaw}")
     print(f"Render : {render}")
+    print(f"Real-time playback: {real_time}")
+    print(f"Sim dt per policy step: {env.model.opt.timestep * env.frame_skip:.4f} s")
     print()
 
     # ── Run episodes ──────────────────────────────────────────────────────────
@@ -145,6 +157,7 @@ def main():
             render=render,
             render_every=args.render_every,
             deterministic=args.deterministic,
+            real_time=real_time,
         )
         # Update vcmd_xy in case of random mode
         vcmd_xy = env.vcmd_xy.copy()

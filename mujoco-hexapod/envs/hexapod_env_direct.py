@@ -86,7 +86,8 @@ class HexapodEnvDirect(gym.Env):
     DEFAULT_MODEL_PATH = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "assets",
-        "hexapod_trossen_new.xml",
+        # "hexapod_trossen_new.xml",
+        "hexapod_trossen_rails.xml"
     )
 
     def __init__(
