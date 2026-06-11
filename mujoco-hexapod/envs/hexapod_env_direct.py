@@ -41,29 +41,13 @@ JOINT_NAMES = [
 ]
 N_JOINTS = len(JOINT_NAMES)  # 18
 
-# Joint limits from XML
-COXA_LIMIT  = 1.5708   # ±π/2
-FEMUR_LIMIT = 1.5708   # ±π/2
-TIBIA_LIMIT = 0.7854   # ±π/4
-
-# Per-joint low/high matching JOINT_NAMES order (coxa, femur, tibia repeated 6×)
-_JOINT_LOW  = np.tile([-COXA_LIMIT, -FEMUR_LIMIT, -TIBIA_LIMIT], 6).astype(np.float32)
-_JOINT_HIGH = np.tile([ COXA_LIMIT,  FEMUR_LIMIT,  TIBIA_LIMIT], 6).astype(np.float32)
-
 # Default standing pose — all joints at 0 except femur slightly down and tibia bent
-# Tune these if the robot starts in a bad posture
-_DEFAULT_FEMUR_ANGLE = 0.4   # rad, positive = leg pointing down
+_DEFAULT_FEMUR_ANGLE = 0.25  # rad, positive = leg pointing down
 _DEFAULT_TIBIA_ANGLE = -0.8  # rad
 
-DEFAULT_QPOS = np.array([
-    # coxa, femur, tibia  (repeated 6 legs)
-    0.0,  _DEFAULT_FEMUR_ANGLE,  _DEFAULT_TIBIA_ANGLE,   # fl
-    0.0,  _DEFAULT_FEMUR_ANGLE,  _DEFAULT_TIBIA_ANGLE,   # fr
-    0.0,  _DEFAULT_FEMUR_ANGLE,  _DEFAULT_TIBIA_ANGLE,   # rr
-    0.0,  _DEFAULT_FEMUR_ANGLE,  _DEFAULT_TIBIA_ANGLE,   # rl
-    0.0,  _DEFAULT_FEMUR_ANGLE,  _DEFAULT_TIBIA_ANGLE,   # mr
-    0.0,  _DEFAULT_FEMUR_ANGLE,  _DEFAULT_TIBIA_ANGLE,   # ml
-], dtype=np.float32)
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
 
 
 def _quat_wxyz_to_rpy(q: np.ndarray) -> np.ndarray:
@@ -86,15 +70,15 @@ class HexapodEnvDirect(gym.Env):
     DEFAULT_MODEL_PATH = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "assets",
-        # "hexapod_trossen_new.xml",
-        "hexapod_trossen_rails.xml"
+        "hexapod_trossen_new.xml",
+        # "hexapod_trossen_rails.xml"
     )
 
     def __init__(
         self,
         model_path: Optional[str] = None,
         frame_skip: int = 4,
-        max_steps: int = 1000,
+        max_steps: int = 10000,
         command_mode: str = "fixed",          # "fixed" or "random"
         vcmd_xy: Tuple[float, float] = (0.2, 0.0),
         wcmd_yaw: float = 0.0,
@@ -153,9 +137,17 @@ class HexapodEnvDirect(gym.Env):
         self._root_qpos_adr = 0
         self._root_qvel_adr = 0
 
-        # ── Action space: 18 joint targets in radians ─────────────────────────
+        # ── Action space: read per-joint limits from XML ──────────────────────
+        _joint_low  = np.empty(N_JOINTS, dtype=np.float32)
+        _joint_high = np.empty(N_JOINTS, dtype=np.float32)
+        for i, jn in enumerate(JOINT_NAMES):
+            jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, jn)
+            _joint_low[i]  = float(self.model.jnt_range[jid][0])
+            _joint_high[i] = float(self.model.jnt_range[jid][1])
+        self._action_low  = _joint_low
+        self._action_high = _joint_high
         self.action_space = spaces.Box(
-            low=_JOINT_LOW, high=_JOINT_HIGH, dtype=np.float32
+            low=_joint_low, high=_joint_high, dtype=np.float32
         )
 
         # ── Observation space: 48-dim ─────────────────────────────────────────
@@ -198,8 +190,7 @@ class HexapodEnvDirect(gym.Env):
             )
 
     def _compute_reward(self, action: np.ndarray) -> float:
-        # ── 1. Velocity tracking ──────────────────────────────────────────────
-        # Local body velocity from MuJoCo (expressed in body frame)
+        # ── Local body velocity (body frame) ──────────────────────────────────
         body_vel = np.zeros(6, dtype=np.float64)
         mujoco.mj_objectVelocity(
             self.model, self.data,
@@ -208,32 +199,47 @@ class HexapodEnvDirect(gym.Env):
             body_vel,
             1,  # local frame
         )
-        vx_actual = float(body_vel[3])
-        vy_actual = float(body_vel[4])
-        wyaw_actual = float(body_vel[2])
+        vx_actual   = float(body_vel[0])
+        vy_actual   = float(body_vel[1])
+        wyaw_actual = float(body_vel[5])
 
-        vx_err  = float(self.vcmd_xy[0]) - vx_actual
-        vy_err  = float(self.vcmd_xy[1]) - vy_actual
+        # ── 1. Velocity reward — paper eq.(4) style ───────────────────────────
+        # Peaks at target velocity, does NOT simply reward "go fast forever".
+        # r_v = 1/(|vx - v_tar| + 1) - 1/(v_tar + 1)
+        # This gives 0 reward at v=0 and positive gradient toward v_tar.
+        vtar_x = float(self.vcmd_xy[0])
+        vtar_y = float(self.vcmd_xy[1])
+        r_vx = 1.0 / (abs(vx_actual - vtar_x) + 1.0) - 1.0 / (abs(vtar_x) + 1.0)
+        r_vy = 1.0 / (abs(vy_actual - vtar_y) + 1.0) - 1.0 / (abs(vtar_y) + 1.0)
+        r_vel = r_vx + r_vy  # [0, 1] range each; agent gets 0 at v=0
+
+        print(f"DEBUG: vx={vx_actual:.3f} vtar_x={vtar_x:.3f} r_vx={r_vx:.3f} | "
+              f"vy={vy_actual:.3f} vtar_y={vtar_y:.3f} r_vy={r_vy:.3f}")    
+
+        # ── 2. Heading correction — paper eq.(5) style ───────────────────────
+        # Reward agent for CORRECTING yaw error rather than penalising deviation.
+        # r_c = |yaw_err_prev| - |yaw_err_now|  → positive when closing the gap.
         yaw_err = self.wcmd_yaw - wyaw_actual
+        r_yaw = float(np.exp(-2.0 * yaw_err**2))  # soft tracking
 
-        r_vel = float(np.exp(-4.0 * (vx_err**2 + vy_err**2)))
-        r_yaw = float(np.exp(-4.0 * yaw_err**2))
-
-        # ── 2. Posture — penalise large roll/pitch ────────────────────────────
+        # ── 3. Posture — small weight, only fires on large angles ─────────────
+        # Reduced weight vs original so it doesn't dominate early learning.
         rpy = _quat_wxyz_to_rpy(self._get_imu_quat())
-        r_posture = -0.2 * float(rpy[0]**2 + rpy[1]**2)
+        r_posture = -0.05 * float(rpy[0]**2 + rpy[1]**2)
 
-        # ── 3. Smoothness — penalise large joint velocities ───────────────────
+        # ── 4. Smoothness — penalise torso z-accel (paper: penalise ż²) ───────
+        vz_body = float(body_vel[2])
+        r_smooth = -0.05 * vz_body**2
+
+        # ── 5. Energy / torque penalty — paper penalises τ² ──────────────────
+        # ctrl = position targets; use joint velocity as proxy for effort
         jvel = self.data.qvel[self._joint_qvel_adr].astype(np.float32)
-        r_smooth = -0.001 * float(np.sum(jvel**2))
+        r_energy = -5e-5 * float(np.sum(jvel**2))
 
-        # ── 4. Action regularisation — penalise extreme joint targets ─────────
-        r_action = -0.001 * float(np.sum(action**2))
+        # ── 6. Alive bonus — scaled to not overwhelm velocity signal ──────────
+        r_alive = 0.05
 
-        # ── 5. Alive bonus ────────────────────────────────────────────────────
-        r_alive = 0.1
-
-        return r_vel + 0.3 * r_yaw + r_posture + r_smooth + r_action + r_alive
+        return r_vel + 0.3 * r_yaw + r_posture + r_smooth + r_energy + r_alive
 
     def _is_terminated(self) -> bool:
         if not self.terminate_on_flip:
@@ -244,6 +250,17 @@ class HexapodEnvDirect(gym.Env):
 
     # ── Gym API ───────────────────────────────────────────────────────────────
 
+    def _default_qpos(self) -> np.ndarray:
+        qpos = np.zeros(N_JOINTS, dtype=np.float32)
+        for i in range(N_JOINTS):
+            lo = float(self._action_low[i])
+            hi = float(self._action_high[i])
+            if i % 3 == 1:  # femur: slight crouch
+                qpos[i] = _clamp(_DEFAULT_FEMUR_ANGLE, lo, hi)
+            elif i % 3 == 2:  # tibia: bent
+                qpos[i] = _clamp(_DEFAULT_TIBIA_ANGLE, lo, hi)
+        return qpos
+
     def reset(self, *, seed: Optional[int] = None, options=None):
         super().reset(seed=seed)
         if seed is not None:
@@ -251,8 +268,8 @@ class HexapodEnvDirect(gym.Env):
 
         mujoco.mj_resetData(self.model, self.data)
 
-        # Set default standing pose
-        self.data.qpos[self._joint_qpos_adr] = DEFAULT_QPOS
+        # Set default standing pose (within joint limits)
+        self.data.qpos[self._joint_qpos_adr] = self._default_qpos()
         mujoco.mj_forward(self.model, self.data)
 
         self.step_count = 0
@@ -265,7 +282,7 @@ class HexapodEnvDirect(gym.Env):
 
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float32).reshape(-1)
-        action = np.clip(action, _JOINT_LOW, _JOINT_HIGH)
+        action = np.clip(action, self._action_low, self._action_high)
 
         # Apply action (position targets) and step physics
         self.data.ctrl[:] = action

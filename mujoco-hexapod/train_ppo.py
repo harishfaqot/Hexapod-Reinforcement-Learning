@@ -6,7 +6,7 @@ def main():
     print("Training PPO on HexapodEnv")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--total-timesteps", type=int, default=3_000_000)
+    parser.add_argument("--total-timesteps", type=int, default=1_000_000)
     parser.add_argument("--log-dir", type=str, default="PPO/logs")
     parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda", "auto"])
     parser.add_argument("--model-path", type=str, default=None)

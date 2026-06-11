@@ -20,7 +20,7 @@ from envs.hexapod_env import HexapodEnv, HexapodTkUI
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="PPO/logs/PPO_2/ppo_hexapod.zip")
+    parser.add_argument("--model", type=str, default="PPO/logs/PPO_6/ppo_hexapod.zip")
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda", "auto"])
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--render", type=bool, default=True)
@@ -163,8 +163,8 @@ def main():
                     body_velocity_local,
                     1,
                 )
-                vxy = np.asarray(body_velocity_local[3:5], dtype=np.float32)
-                wyaw_val = float(body_velocity_local[2])
+                vxy = np.asarray(body_velocity_local[0:2], dtype=np.float32)
+                wyaw_val = float(body_velocity_local[5])
 
                 timesteps.append(step_idx)
                 vcmd_x_log.append(float(env.vcmd_xy[0]))

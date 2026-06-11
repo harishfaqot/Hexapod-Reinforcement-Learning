@@ -490,7 +490,7 @@ class HexapodEnv(gym.Env):
     def _compute_reward(self, vx_cmd, vy_cmd, desired_heading_deg):
         vel = np.zeros(6, dtype=np.float64)
         mujoco.mj_objectVelocity(self.model, self.data, mujoco.mjtObj.mjOBJ_BODY, self.body_id, vel, 1)
-        dir_r = 10 * (vx_cmd * vel[3] + vy_cmd * vel[4])
+        dir_r = 10 * (vx_cmd * vel[0] + vy_cmd * vel[1])
         if dir_r < -0.01:
             dir_r *= 10; self.neg_dir_count += 1
             if self.enable_debug: print(f"neg dir r={dir_r:.3f} count={self.neg_dir_count}")

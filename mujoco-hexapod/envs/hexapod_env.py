@@ -371,9 +371,9 @@ class HexapodSimple:
     DEFAULT_MODEL_PATH = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "assets",
-        # "hexapod_trossen_new.xml",
+        "hexapod_trossen_new.xml",
         # "hexapod_trossen_tiles_tiles.xml",
-        "hexapod_trossen_rails.xml",
+        # "hexapod_trossen_rails.xml",
     )
 
     def __init__(self, model_path: Optional[str] = None, frame_skip: int = 1):
@@ -1127,8 +1127,8 @@ class HexapodEnv(gym.Env):
             body_velocity_local,
             1,
         )
-        vx_actual = float(body_velocity_local[3])
-        vy_actual = float(body_velocity_local[4])
+        vx_actual = float(body_velocity_local[0])
+        vy_actual = float(body_velocity_local[1])
         vx_cmd = float(self.vcmd_xy[0])
         vy_cmd = float(self.vcmd_xy[1])
         direction_reward = 10 * (vx_cmd * vx_actual + vy_cmd * vy_actual)
