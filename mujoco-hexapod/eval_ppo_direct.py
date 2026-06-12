@@ -17,13 +17,13 @@ from envs.hexapod_env_direct import HexapodEnvDirect
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate trained hexapod policy")
-    parser.add_argument("--model-path", type=str, default="PPO/logs/ppo_hexapod_last.zip")
+    parser.add_argument("--model-path", type=str, default="PPO/logs/PPO_22/ppo_hexapod.zip")
     parser.add_argument("--xml-path",      type=str,   default=None,         help="Path to MuJoCo XML (default: asset in env)")
     parser.add_argument("--episodes",      type=int,   default=5,            help="Number of episodes to run")
     parser.add_argument("--max-steps",     type=int,   default=10000,         help="Max steps per episode")
     parser.add_argument("--frame-skip",    type=int,   default=1,            help="Frame skip (match training)")
     parser.add_argument("--command-mode",  type=str,   default="fixed",      choices=["fixed", "random"])
-    parser.add_argument("--vcmd-x",        type=float, default=5.0,          help="Forward velocity command")
+    parser.add_argument("--vcmd-x",        type=float, default=1.0,          help="Forward velocity command")
     parser.add_argument("--vcmd-y",        type=float, default=0.0,          help="Lateral velocity command")
     parser.add_argument("--wcmd-yaw",      type=float, default=0.0,          help="Yaw rate command")
     parser.add_argument("--no-render",     action="store_true",               help="Disable MuJoCo viewer")
