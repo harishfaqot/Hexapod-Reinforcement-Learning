@@ -17,7 +17,7 @@ from envs.hexapod_env_direct import HexapodEnvDirect
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate trained hexapod policy")
-    parser.add_argument("--model-path", type=str, default="PPO/logs/PPO_22/ppo_hexapod.zip")
+    parser.add_argument("--model-path", type=str, default="PPO/logs/PPO_25/ppo_hexapod.zip")
     parser.add_argument("--xml-path",      type=str,   default=None,         help="Path to MuJoCo XML (default: asset in env)")
     parser.add_argument("--episodes",      type=int,   default=5,            help="Number of episodes to run")
     parser.add_argument("--max-steps",     type=int,   default=10000,         help="Max steps per episode")
