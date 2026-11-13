@@ -38,10 +38,10 @@ def load_policy(run_dir: Path, env):
     return lambda obs: model.predict(norm.normalize_obs(obs), deterministic=True)[0]
 
 
-def evaluate(controller: str, terrain: str, height: float, episodes: int, command, render: bool):
+def evaluate(controller: str, terrain: str, height: float, episodes: int, command, render: bool, seconds: float = 20.0):
     kinematic = controller == "kinematic"
     mode = "residual" if kinematic else json.loads((Path(controller) / "config.json").read_text())["mode"]
-    env = HexapodEnv(mode=mode, command=command, terrain=terrain, terrain_height=height,
+    env = HexapodEnv(mode=mode, command=command, terrain=terrain, terrain_height=height, episode_seconds=seconds,
                      render_mode="human" if render else None)
     policy = (lambda obs: np.zeros(18)) if kinematic else load_policy(Path(controller), env)
 
@@ -88,6 +88,7 @@ def main():
                    help="bump heights or stair riser heights to test [m]")
     p.add_argument("--episodes", type=int, default=20)
     p.add_argument("--command", type=float, nargs=3, default=[0.15, 0.0, 0.0], metavar=("VX", "VY", "YAW_RATE"))
+    p.add_argument("--seconds", type=float, default=20.0, help="time limit per episode")
     p.add_argument("--render", action="store_true")
     p.add_argument("--out", default="results.csv")
     args = p.parse_args()
@@ -99,7 +100,7 @@ def main():
         if new_file:
             writer.writeheader()
         for height in args.height:
-            row = evaluate(args.controller, args.terrain, height, args.episodes, args.command, args.render)
+            row = evaluate(args.controller, args.terrain, height, args.episodes, args.command, args.render, args.seconds)
             if not args.render:
                 writer.writerow(row)
             print("  ".join(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}" for k, v in row.items()))

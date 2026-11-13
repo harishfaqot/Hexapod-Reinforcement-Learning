@@ -63,7 +63,7 @@ should stay near 500 (500 = the robot did not tip over for the whole 20 s).
 ## Test protocol
 
 The main task is stair climbing, because that is where a fixed gait breaks.
-`evaluate.py` runs 20 episodes of 20 s per stair height: 8 steps, 25 cm deep,
+`evaluate.py` runs 20 episodes of 20 s (or `--seconds 40`) per stair height: 8 steps, 25 cm deep,
 risers of 0, 4, 6, 8 and 10 cm, command 0.15 m/s forward. Start position and
 heading vary a little per episode from fixed seeds, so every controller gets
 exactly the same 20 trials. No training-time randomization during the test.
@@ -77,23 +77,23 @@ The kinematic baseline is tuned: its foot lift (6 cm) is the best of 4, 6, 8 and
 
 ## Results so far
 
-Share of 20 trials that reached the top of the stairs within 20 s
-(experiment v3, one training seed, simulation only):
+Share of 20 trials that reached the top of the stairs within 40 s
+(experiment v3, simulation only, three training seeds of residual RL):
 
-| Riser | Kinematic gait | Residual RL | Direct RL |
-|---|---|---|---|
-| 0 cm | 100% | 100% | 0% |
-| 4 cm | 90% | 100% | 0% |
-| 6 cm | 50% | 100% | 0% |
-| 8 cm | 0% | 100% | 0% |
-| 10 cm | 0% | 0% (100% when given 40 s) | 0% |
+| Riser | Kinematic gait | Residual seed 0 | Residual seed 1 | Residual seed 2 |
+|---|---|---|---|---|
+| 0-6 cm | 100% | 100% | 100% | 100% |
+| 8 cm | 0% | 100% | 100% | 0% |
+| 10 cm | 0% | 100% | 100% | 0% |
 
-Residual RL climbs stairs the tuned kinematic gait cannot, without falling, and
-with lower tracking error and energy use. Direct RL has not learned the task
-within 3M steps. This is one seed in simulation, not a final result.
+Two of three seeds climb stairs the tuned kinematic gait cannot, with no falls.
+The third seed learned nothing beyond the gait, so the method is not yet
+reliable across seeds. Direct RL has not learned the task within 3M steps; a
+12M-step run is the next check. Simulation only, with estimated masses and
+servo gains.
 
 `EXPERIMENTS.md` has every attempt, including the failed ones, with full tables
-and diagnoses. Numbers for this table are in `results.csv`.
+and diagnoses. Numbers: `results_40s.csv` (40 s limit) and `results.csv` (20 s limit).
 
 ## Before real-robot experiments
 

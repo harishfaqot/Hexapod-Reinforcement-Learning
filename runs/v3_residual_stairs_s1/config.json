@@ -1,0 +1,9 @@
+{
+  "tag": "v3",
+  "mode": "residual",
+  "seed": 1,
+  "timesteps": 3000000,
+  "terrain": "stairs",
+  "height": 0.1,
+  "n_envs": 16
+}

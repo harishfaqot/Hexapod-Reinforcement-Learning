@@ -160,3 +160,38 @@ Open points:
 1. One seed. Seeds 1 and 2 of the residual run are needed before any claim.
 2. Direct needs a longer run (`v3long`, 12M steps) before it can be judged.
 3. Simulation only, with estimated masses and servo gains.
+
+### v3, residual seeds 1 and 2, and a 40 s time limit (2026-11-13)
+
+Runs: `runs/v3_residual_stairs_s1`, `runs/v3_residual_stairs_s2` (same code and settings as seed 0).
+
+With the 20 s limit (`results.csv`) the seeds looked very different at 8 cm:
+seed 0 climbed 100%, seeds 1 and 2 climbed 0%. But seed 1 had travelled 2.40 m
+of the 2.5 m needed: it was slow, not stuck. The 20 s limit mixes up "slow" and
+"cannot climb", so the comparison was repeated with 40 s per trial
+(`python evaluate.py <controller> --seconds 40 --out results_40s.csv`).
+
+Climbed within 40 s, 20 trials each. No trial ended with the robot tipped over.
+
+| Riser | Kinematic | Residual seed 0 | Residual seed 1 | Residual seed 2 |
+|---|---|---|---|---|
+| 0 cm | 100% | 100% | 100% | 100% |
+| 4 cm | 100% | 100% | 100% | 100% |
+| 6 cm | 100% | 100% | 100% | 100% |
+| 8 cm | 0% | 100% | 100% | 0% |
+| 10 cm | 0% | 100% | 100% | 0% |
+
+Finding: two of three seeds climb 8 cm and 10 cm stairs in every trial, where
+the kinematic gait never does. Seed 2 learned nothing useful: its numbers match
+the kinematic gait almost exactly at every height (for example 2.19 m against
+2.37 m at 8 cm), which means its corrections stayed close to zero.
+
+So the method works but is not reliable across seeds yet. Doing nothing is a
+safe choice for a residual policy (it keeps the gait's reward on easy stairs),
+and one seed settled there. Before a paper: more seeds (at least 5), and a
+change that makes the outcome repeatable, for example longer training or
+spending more of the training on the stairs the gait cannot climb.
+
+Note: the first 40 s run showed every controller "falling" on flat ground at
+exactly 5 m. The robot had walked off the edge of the simulated floor. The
+floor is now 20 m wide and the table above is from the corrected run.

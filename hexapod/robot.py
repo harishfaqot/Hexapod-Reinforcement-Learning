@@ -58,12 +58,12 @@ HOME_RADIUS, HOME_HEIGHT = 0.16, 0.11                # neutral foot position, me
 HOME = LEG_BASE + np.column_stack([
     HOME_RADIUS * np.cos(LEG_YAW), HOME_RADIUS * np.sin(LEG_YAW), np.full(6, -HOME_HEIGHT)])
 
-TERRAIN_SIZE = 5.0       # half-width of the terrain square [m]
-TERRAIN_CELLS = 200      # grid cells per side (5 cm cells)
+TERRAIN_SIZE = 10.0      # half-width of the terrain square [m]. A 40 s walk covers up to 7 m
+TERRAIN_CELLS = 400      # grid cells per side (5 cm cells)
 TERRAIN_MAX_HEIGHT = 0.15
 STAIR_STEPS = 8          # steps going up along +x, then a long flat top
 STAIR_START = 0.5        # x of the first riser [m]
-STAIR_SLAB = (2.5, 2.5, 0.25)   # half-sizes of one slab; slab i is step i and everything behind it
+STAIR_SLAB = (5.0, 2.5, 0.25)   # half-sizes of one slab; slab i is step i and everything behind it
 
 
 def inverse_kinematics(feet: np.ndarray) -> np.ndarray:
