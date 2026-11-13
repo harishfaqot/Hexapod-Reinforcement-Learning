@@ -129,4 +129,34 @@ The v2 numbers are kept in `results_v2.csv`.
 Baseline under the v3 protocol: 0 cm 100%, 4 cm 90%, 6 cm 50%, 8 cm 0%, 10 cm 0%.
 
 Runs: `runs/v3_residual_stairs_s0`, `runs/v3_direct_stairs_s0`. Code: git tag `exp-v3`. 3M steps, seed 0.
-Result: pending (training)
+
+| Riser | Kinematic climbed / distance / speed | Residual climbed / distance / speed | Direct climbed / distance |
+|---|---|---|---|
+| 0 cm | 100% / 2.86 m / 0.136 | 100% / 3.47 m / 0.169 | 0% / 1.20 m |
+| 4 cm | 90% / 2.58 m / 0.124 | 100% / 3.14 m / 0.153 | 0% / 0.91 m |
+| 6 cm | 50% / 2.44 m / 0.118 | 100% / 2.91 m / 0.143 | 0% / 0.80 m |
+| 8 cm | 0% / 0.99 m / 0.031 | 100% / 2.66 m / 0.132 | 0% / 0.83 m |
+| 10 cm | 0% / 0.44 m / 0.010 | 0% / 2.14 m / 0.109 | 0% / 0.58 m |
+
+Speed in m/s, commanded 0.15. Nobody tipped over in any trial (0 falls in all 300 trials).
+
+Finding (residual): climbs every stair up to 8 cm in 20 of 20 trials, with no
+falls, and now walks close to the commanded speed. Both v2 problems are fixed:
+on flat ground the final heading error is about 4 degrees (v2: 110 degrees).
+Velocity tracking error is lower than the kinematic gait at every height, and
+so is cost of transport (for example 13.4 against 42.8 at 8 cm).
+
+10 cm with more time (extra check, 10 trials, 40 s instead of 20 s): residual
+reaches the top in 10 of 10 trials; it is slow, not stuck. The kinematic gait
+with 40 s reaches the top in 0 of 10 at 8 cm and 0 of 10 at 10 cm: it does not
+get over the first riser and slides sideways along it.
+
+Finding (direct): still fails. It moves, but turns away from the stairs
+(final heading error about 110 degrees on flat ground). Its training reward was
+still rising when the run ended (-230 at the start, -7 at 3M steps), so it has
+not converged. Learning to walk, turn and climb from nothing needs more than 3M steps.
+
+Open points:
+1. One seed. Seeds 1 and 2 of the residual run are needed before any claim.
+2. Direct needs a longer run (`v3long`, 12M steps) before it can be judged.
+3. Simulation only, with estimated masses and servo gains.

@@ -77,21 +77,23 @@ The kinematic baseline is tuned: its foot lift (6 cm) is the best of 4, 6, 8 and
 
 ## Results so far
 
-Share of 20 trials that reached the top of the stairs (one training seed, simulation only):
+Share of 20 trials that reached the top of the stairs within 20 s
+(experiment v3, one training seed, simulation only):
 
-| Riser | Kinematic gait | Residual RL (v2) | Direct RL (v2) |
+| Riser | Kinematic gait | Residual RL | Direct RL |
 |---|---|---|---|
-| 0 cm | 100% | 90% | 0% |
-| 4 cm | 100% | 80% | 0% |
-| 6 cm | 60% | 100% | 0% |
+| 0 cm | 100% | 100% | 0% |
+| 4 cm | 90% | 100% | 0% |
+| 6 cm | 50% | 100% | 0% |
 | 8 cm | 0% | 100% | 0% |
-| 10 cm | 0% | 80% | 0% |
+| 10 cm | 0% | 0% (100% when given 40 s) | 0% |
 
-Residual RL climbs stairs the tuned kinematic gait cannot. This is a first
-result, not a final one: the v2 policies ignore the commanded speed and do not
-hold their heading, and the direct policy walks in circles. `EXPERIMENTS.md`
-has every attempt, including the failed ones, with full tables and diagnoses.
-Numbers for this table are in `results_v2.csv`.
+Residual RL climbs stairs the tuned kinematic gait cannot, without falling, and
+with lower tracking error and energy use. Direct RL has not learned the task
+within 3M steps. This is one seed in simulation, not a final result.
+
+`EXPERIMENTS.md` has every attempt, including the failed ones, with full tables
+and diagnoses. Numbers for this table are in `results.csv`.
 
 ## Before real-robot experiments
 
