@@ -1,14 +1,15 @@
 """Train a PPO policy.
 
-    python train.py --mode residual --seed 0
-    python train.py --mode direct   --seed 0
+    python train.py --tag v2 --mode residual --seed 0
+    python train.py --tag v2 --mode direct   --seed 0
 
-Each run writes to runs/<mode>_<terrain>_s<seed>/ : model.zip, vecnormalize.pkl, config.json
-and TensorBoard logs.
+Each run writes to runs/<tag>_<mode>_<terrain>_s<seed>/ : model.zip, vecnormalize.pkl,
+config.json and TensorBoard logs. An existing run is never overwritten: pick a new
+tag for each new experiment and describe it in EXPERIMENTS.md.
 
 Watch a run while it trains (second terminal):
     tensorboard --logdir runs                                  # learning curves
-    python evaluate.py runs/residual_stairs_s0 --render --episodes 1 --height 0.04  # the robot, current policy
+    python evaluate.py runs/v2_residual_stairs_s0 --render --episodes 1 --height 0.04  # the robot, current policy
 """
 import argparse
 import json
@@ -41,6 +42,7 @@ class SaveLatest(BaseCallback):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--tag", required=True, help="experiment name, e.g. v2. See EXPERIMENTS.md")
     p.add_argument("--mode", choices=["residual", "direct"], required=True)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--timesteps", type=int, default=3_000_000)
@@ -49,8 +51,8 @@ def main():
     p.add_argument("--n-envs", type=int, default=16)
     args = p.parse_args()
 
-    run_dir = Path("runs") / f"{args.mode}_{args.terrain}_s{args.seed}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = Path("runs") / f"{args.tag}_{args.mode}_{args.terrain}_s{args.seed}"
+    run_dir.mkdir(parents=True)        # fails if the run exists: results are never overwritten
     (run_dir / "config.json").write_text(json.dumps(vars(args), indent=2))
 
     env = make_vec_env(

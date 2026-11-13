@@ -1,8 +1,8 @@
 """Measure a controller on fixed test terrains and append the numbers to results.csv.
 
     python evaluate.py kinematic                       # open-loop tripod gait, the baseline
-    python evaluate.py runs/residual_stairs_s0
-    python evaluate.py runs/direct_stairs_s0 --render --episodes 1 --height 0.04
+    python evaluate.py runs/v2_residual_stairs_s0
+    python evaluate.py runs/v2_direct_stairs_s0 --render --episodes 1 --height 0.04
 
 Every controller sees the same terrains and commands (same seeds), without
 training-time randomization, so rows are directly comparable.
@@ -10,6 +10,7 @@ training-time randomization, so rows are directly comparable.
 import argparse
 import csv
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -24,8 +25,15 @@ FIELDS = ["controller", "terrain", "height_m", "episodes", "fall_rate", "climbed
 def load_policy(run_dir: Path, env):
     from stable_baselines3 import PPO
     from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-    model = PPO.load(run_dir / "model", device="cpu")
-    norm = VecNormalize.load(str(run_dir / "vecnormalize.pkl"), DummyVecEnv([lambda: env]))
+    for attempt in range(5):        # a running training rewrites these files every few seconds
+        try:
+            model = PPO.load(run_dir / "model", device="cpu")
+            norm = VecNormalize.load(str(run_dir / "vecnormalize.pkl"), DummyVecEnv([lambda: env]))
+            break
+        except Exception:
+            if attempt == 4:
+                raise
+            time.sleep(0.5)
     norm.training = False
     return lambda obs: model.predict(norm.normalize_obs(obs), deterministic=True)[0]
 
@@ -52,7 +60,6 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
             energy += info["power"] * CONTROL_DT
             done = terminated or truncated
             if render:
-                import time
                 time.sleep(CONTROL_DT)
         falls += terminated
         on_top = env.data.qpos[2] > robot.STAIR_STEPS * height + 0.5 * robot.HOME_HEIGHT    # really up there, not inside

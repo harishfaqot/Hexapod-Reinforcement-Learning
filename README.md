@@ -25,6 +25,7 @@ hexapod/robot.py    robot dimensions, MuJoCo model, inverse kinematics, tripod g
 hexapod/env.py      the environment: observation, action, reward, terrain, randomization
 train.py            PPO training
 evaluate.py         fixed test protocol -> results.csv
+EXPERIMENTS.md      log of every training attempt: what changed, what came out
 tests/              self-checks (IK against the simulator, baseline walks, Gym API)
 papers/             reference papers
 Report/             bachelor thesis and first article
@@ -40,10 +41,10 @@ pip install -r requirements.txt
 python -m tests.test_hexapod
 
 python evaluate.py kinematic                    # baseline numbers
-python train.py --mode residual --seed 0        # about 20-40 min on a 16-core CPU
-python train.py --mode direct --seed 0
-python evaluate.py runs/residual_stairs_s0
-python evaluate.py runs/direct_stairs_s0
+python train.py --tag v2 --mode residual --seed 0     # about 20-40 min on a 16-core CPU
+python train.py --tag v2 --mode direct --seed 0
+python evaluate.py runs/v2_residual_stairs_s0
+python evaluate.py runs/v2_direct_stairs_s0
 ```
 
 ### Watching a run while it trains
@@ -52,7 +53,7 @@ Training saves the current policy after every update, so in a second terminal:
 
 ```
 tensorboard --logdir runs                                                  # learning curves, open http://localhost:6006
-python evaluate.py runs/residual_stairs_s0 --render --episodes 1 --height 0.08  # the robot with the current policy
+python evaluate.py runs/v2_residual_stairs_s0 --render --episodes 1 --height 0.08  # the robot with the current policy
 ```
 
 Run the second command again whenever you want to see the newest policy.
@@ -74,7 +75,23 @@ mechanical cost of transport (energy / weight / distance).
 The kinematic baseline is tuned: its foot lift (6 cm) is the best of 4, 6, 8 and
 10 cm on this task. `--terrain bumps` tests random bumps instead of stairs.
 
-RESULTS_PLACEHOLDER
+## Results so far
+
+Share of 20 trials that reached the top of the stairs (one training seed, simulation only):
+
+| Riser | Kinematic gait | Residual RL (v2) | Direct RL (v2) |
+|---|---|---|---|
+| 0 cm | 100% | 90% | 0% |
+| 4 cm | 100% | 80% | 0% |
+| 6 cm | 60% | 100% | 0% |
+| 8 cm | 0% | 100% | 0% |
+| 10 cm | 0% | 80% | 0% |
+
+Residual RL climbs stairs the tuned kinematic gait cannot. This is a first
+result, not a final one: the v2 policies ignore the commanded speed and do not
+hold their heading, and the direct policy walks in circles. `EXPERIMENTS.md`
+has every attempt, including the failed ones, with full tables and diagnoses.
+All numbers are in `results.csv`.
 
 ## Before real-robot experiments
 

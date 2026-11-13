@@ -6,9 +6,11 @@ One environment, three controllers that can be compared fairly:
     mode="direct"    joint target = standing pose   + learned offset (no gait, no IK)
     kinematic        mode="residual" driven with all-zero actions (the baseline)
 
-Observation (47 numbers), limited to what the real robot can measure with its
+Observation (65 numbers), limited to what the real robot can measure with its
 IMU and servos, so a trained policy can be moved to hardware:
     gravity direction in body frame (3), gyro (3), joint angles minus default (18),
+    joint target minus joint angle (18)  <- the robot's only sense of touch: a leg
+                                            that is blocked cannot reach its target
     previous action (18), command vx vy yaw_rate (3), gait clock sin cos (2)
 Action: 18 numbers in [-1, 1], one per joint.
 """
@@ -23,7 +25,6 @@ RESIDUAL_SCALE = 0.3         # rad of correction on top of the gait
 DIRECT_SCALE = 0.6           # rad of offset around the standing pose
 COMMAND_LOW = np.array([0.05, -0.05, -0.4])     # vx, vy [m/s], yaw rate [rad/s]
 COMMAND_HIGH = np.array([0.20, 0.05, 0.4])
-TRACK_SIGMA = 0.1            # m/s, width of the velocity reward
 
 
 class HexapodEnv(gym.Env):
@@ -61,7 +62,7 @@ class HexapodEnv(gym.Env):
         self.viewer = None
 
         self.action_space = gym.spaces.Box(-1.0, 1.0, (18,), np.float32)
-        self.observation_space = gym.spaces.Box(-np.inf, np.inf, (47,), np.float32)
+        self.observation_space = gym.spaces.Box(-np.inf, np.inf, (65,), np.float32)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -81,7 +82,8 @@ class HexapodEnv(gym.Env):
             gyro += self.np_random.normal(0, 0.1, 3)
             joints = joints + self.np_random.normal(0, 0.02, 18)
         clock = 2 * np.pi * robot.GAIT_FREQ * self.steps * CONTROL_DT
-        return np.concatenate([gravity, gyro, joints, self.last_action, self.command,
+        blocked = self.data.ctrl - robot.DEFAULT_POSE - joints      # last target minus measured angle
+        return np.concatenate([gravity, gyro, joints, blocked, self.last_action, self.command,
                                [np.sin(clock), np.cos(clock)]]).astype(np.float32)
 
     def _new_terrain(self):
@@ -156,17 +158,23 @@ class HexapodEnv(gym.Env):
         belly_hit = any(c.geom1 == self.torso_geom or c.geom2 == self.torso_geom
                         for c in self.data.contact[: self.data.ncon])
 
-        track_lin = np.exp(-np.sum((self.command[:2] - v[:2]) ** 2) / TRACK_SIGMA**2)
+        # Velocity errors are measured relative to the commanded speed. Otherwise standing
+        # still earns most of the reward whenever the command is slow, and the policy learns to stand.
+        speed = max(np.linalg.norm(self.command[:2]), 1e-6)
+        error = np.linalg.norm(self.command[:2] - v[:2]) / speed
+        track_lin = np.exp(-4.0 * error**2)                            # 0.02 standing still, 1 on target
+        progress = np.clip(v[:2] @ self.command[:2] / speed**2, -1.0, 1.0)   # 0 standing still, 1 on target
         track_yaw = np.exp(-(self.command[2] - w[2]) ** 2 / 0.1)
         reward = (
             1.0 * track_lin
-            + 0.5 * track_yaw
+            + 1.0 * progress                               # keeps a slope toward the goal when far from it
+            + 0.3 * track_yaw
             - 2.0 * v[2] ** 2                              # no bouncing
             - 0.05 * (w[0] ** 2 + w[1] ** 2)               # no rocking
-            - 1.0 * (gravity[0] ** 2 + gravity[1] ** 2)    # stay level
+            - 0.5 * (gravity[0] ** 2 + gravity[1] ** 2)    # stay level
             - 0.01 * np.sum((action - self.last_action) ** 2)   # smooth commands, kind to servos
             - 0.005 * power
-            - 1.0 * belly_hit                              # body resting on the ground or a stair edge
+            - 0.2 * belly_hit                              # body resting on the ground or a stair edge
         )
         self.last_action = action
 
