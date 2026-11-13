@@ -13,6 +13,10 @@ IMU and servos, so a trained policy can be moved to hardware:
                                             that is blocked cannot reach its target
     previous action (18), command vx vy yaw_rate (3), gait clock sin cos (2)
 Action: 18 numbers in [-1, 1], one per joint.
+
+On stairs the yaw-rate command is not free: it is set every step from the IMU
+heading so the robot keeps facing the stairs (a simple compass loop, the same
+for all three controllers, and available on the real robot from the BNO055).
 """
 import gymnasium as gym
 import mujoco
@@ -130,7 +134,7 @@ class HexapodEnv(gym.Env):
 
         self.steps = 0
         self.last_action = np.zeros(18)
-        self.command = (self.fixed_command if self.fixed_command is not None
+        self.command = (self.fixed_command.copy() if self.fixed_command is not None
                         else self.np_random.uniform(COMMAND_LOW, COMMAND_HIGH))
         if self.terrain == "stairs" and self.fixed_command is None:
             self.command[1:] = 0.0                  # walk straight at the stairs
@@ -138,6 +142,10 @@ class HexapodEnv(gym.Env):
 
     def step(self, action):
         action = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)
+        if self.terrain == "stairs":                # compass loop: turn back toward heading 0
+            w_, x_, y_, z_ = self.data.qpos[3:7]
+            yaw = np.arctan2(2 * (w_ * z_ + x_ * y_), 1 - 2 * (y_ * y_ + z_ * z_))
+            self.command[2] = np.clip(-1.0 * yaw, COMMAND_LOW[2], COMMAND_HIGH[2])
         applied = self.last_action if self.delay else action
         if self.mode == "direct":
             target = robot.DEFAULT_POSE + DIRECT_SCALE * applied
@@ -163,12 +171,13 @@ class HexapodEnv(gym.Env):
         speed = max(np.linalg.norm(self.command[:2]), 1e-6)
         error = np.linalg.norm(self.command[:2] - v[:2]) / speed
         track_lin = np.exp(-4.0 * error**2)                            # 0.02 standing still, 1 on target
-        progress = np.clip(v[:2] @ self.command[:2] / speed**2, -1.0, 1.0)   # 0 standing still, 1 on target
-        track_yaw = np.exp(-(self.command[2] - w[2]) ** 2 / 0.1)
+        along = v[:2] @ self.command[:2] / speed**2                     # 1 = exactly the commanded speed
+        progress = np.clip(1.0 - abs(along - 1.0), -1.0, 1.0)          # 0 standing still, 1 on target, 0 at double speed
+        track_yaw = np.exp(-(self.command[2] - w[2]) ** 2 / 0.05)
         reward = (
             1.0 * track_lin
             + 1.0 * progress                               # keeps a slope toward the goal when far from it
-            + 0.3 * track_yaw
+            + 0.5 * track_yaw
             - 2.0 * v[2] ** 2                              # no bouncing
             - 0.05 * (w[0] ** 2 + w[1] ** 2)               # no rocking
             - 0.5 * (gravity[0] ** 2 + gravity[1] ** 2)    # stay level

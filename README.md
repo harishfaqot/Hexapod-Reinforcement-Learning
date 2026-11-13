@@ -91,7 +91,7 @@ Residual RL climbs stairs the tuned kinematic gait cannot. This is a first
 result, not a final one: the v2 policies ignore the commanded speed and do not
 hold their heading, and the direct policy walks in circles. `EXPERIMENTS.md`
 has every attempt, including the failed ones, with full tables and diagnoses.
-All numbers are in `results.csv`.
+Numbers for this table are in `results_v2.csv`.
 
 ## Before real-robot experiments
 

@@ -112,3 +112,21 @@ Problems found (reasons this is not a final result):
 4. One seed only.
 
 Next (v3): punish overshooting the commanded speed; hold the heading with the IMU.
+
+## v3 — obey the speed command, hold the heading (2026-11-13)
+
+Changes from v2:
+1. Progress term now peaks at the commanded speed and falls off on both sides
+   (0 when standing still, 1 on target, 0 at double speed, -1 at triple speed).
+2. Heading hold on stairs: every step the yaw-rate command is set from the IMU
+   heading (`-1.0 x yaw`, limited to +/-0.4 rad/s). This is part of the task for
+   all three controllers, so the kinematic baseline was measured again with it.
+3. Yaw tracking weight 0.3 -> 0.5, and its width narrowed (0.1 -> 0.05) so slow turning costs reward.
+
+Test protocol changed (heading hold), so v3 numbers go in a new `results.csv`.
+The v2 numbers are kept in `results_v2.csv`.
+
+Baseline under the v3 protocol: 0 cm 100%, 4 cm 90%, 6 cm 50%, 8 cm 0%, 10 cm 0%.
+
+Runs: `runs/v3_residual_stairs_s0`, `runs/v3_direct_stairs_s0`. Code: git tag `exp-v3`. 3M steps, seed 0.
+Result: pending (training)
