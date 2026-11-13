@@ -231,3 +231,36 @@ picture as the interim check: it walks, it does not steer.
 Idea for v4 (not done): reward progress toward the stairs in the world frame,
 instead of body-frame speed plus a yaw-rate command. Walking in loops would then
 earn nothing, which should help the direct policy most.
+
+### Second terrain: rubble the policies never trained on (2026-11-13)
+
+Question: does a policy trained only on stairs help on a different obstacle?
+Test terrain: `--terrain bumps`, a field of random bumps (rubble), heights
+2 to 10 cm. No new training. Same v3 policies as above.
+
+    python evaluate.py <controller> --terrain bumps --height 0.02 0.04 0.06 0.08 0.10 --out results_bumps.csv
+
+Net distance in 20 s, command 0.15 m/s (a perfect walk is 3.0 m), 20 trials. No falls anywhere.
+
+| Bump height | Kinematic | Residual s0 | Residual s1 | Residual s2 | Direct 12M |
+|---|---|---|---|---|---|
+| 2 cm | 2.85 m | 3.27 m | 2.93 m | 3.21 m | 0.44 m |
+| 4 cm | 2.82 m | 3.18 m | 2.89 m | 3.15 m | 0.78 m |
+| 6 cm | 2.74 m | 3.14 m | 2.85 m | 3.08 m | 0.78 m |
+| 8 cm | 2.42 m | 3.10 m | 2.77 m | 2.88 m | 0.50 m |
+| 10 cm | 1.59 m | 2.70 m | 2.65 m | 2.54 m | 0.35 m |
+
+Finding: on low rubble everything with a gait is fine, as expected. On 10 cm
+rubble the kinematic gait slows to half speed (0.075 m/s) and the three residual
+policies keep 0.12-0.13 m/s, covering 60-70% more ground at about half the cost
+of transport (12.7-15.7 against 25.1). They were never trained on this terrain.
+
+Weak point found on the way: the first version of this test had no heading
+hold on rubble (it was only switched on for stairs). Kinematic and residual s0
+were fine, but residual s1 and s2 walked in curves: right speed in their own
+frame, only 0.2-0.6 m net distance. So the learned corrections add a turning
+bias that the compass loop hides. `HexapodEnv` now has `heading_hold`, and
+`evaluate.py` switches it on for every controller on every terrain (the robot
+has the IMU for it). The kinematic numbers did not change with it. The policies
+need the compass loop; that must be said in the paper, and the loop must run on
+the real robot.

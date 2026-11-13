@@ -45,6 +45,7 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
     kinematic = controller == "kinematic"
     mode = "residual" if kinematic else json.loads((Path(controller) / "config.json").read_text())["mode"]
     env = HexapodEnv(mode=mode, command=command, terrain=terrain, terrain_height=height, episode_seconds=seconds,
+                     heading_hold=True,          # every controller gets the IMU compass loop, on every terrain
                      render_mode="human" if render else None)
     policy = (lambda obs: np.zeros(18)) if kinematic else load_policy(Path(controller), env)
 

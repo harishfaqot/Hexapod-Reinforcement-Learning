@@ -14,7 +14,7 @@ IMU and servos, so a trained policy can be moved to hardware:
     previous action (18), command vx vy yaw_rate (3), gait clock sin cos (2)
 Action: 18 numbers in [-1, 1], one per joint.
 
-On stairs the yaw-rate command is not free: it is set every step from the IMU
+On stairs (and in every test of evaluate.py) the yaw-rate command is not free: it is set every step from the IMU
 heading so the robot keeps facing the stairs (a simple compass loop, the same
 for all three controllers, and available on the real robot from the BNO055).
 """
@@ -35,14 +35,15 @@ class HexapodEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, mode="residual", command=None, terrain="bumps", terrain_height=0.0,
-                 randomize=False, episode_seconds=20.0, render_mode=None):
+                 randomize=False, episode_seconds=20.0, render_mode=None, heading_hold=None):
         """command: fixed (vx, vy, yaw_rate), or None to sample a new one each episode.
         terrain: "bumps" (random bumps everywhere) or "stairs" (8 steps up along +x,
         starting 0.5 m ahead of the robot, then a flat top).
         terrain_height: bump height or stair riser height in metres. With
         randomize=True each episode draws a height between 0 and this value.
         randomize: training-time randomization of friction, payload, servo gain,
-        action delay, sensor noise and pushes."""
+        action delay, sensor noise and pushes.
+        heading_hold: run the compass loop (see top of file). Default: on stairs only."""
         assert mode in ("residual", "direct")
         assert terrain in ("bumps", "stairs")
         assert 0.0 <= terrain_height <= robot.TERRAIN_MAX_HEIGHT
@@ -53,6 +54,7 @@ class HexapodEnv(gym.Env):
         self.randomize = randomize
         self.max_steps = int(episode_seconds / CONTROL_DT)
         self.render_mode = render_mode
+        self.heading_hold = terrain == "stairs" if heading_hold is None else heading_hold
 
         self.model = mujoco.MjModel.from_xml_string(robot.build_xml())
         self.data = mujoco.MjData(self.model)
@@ -142,7 +144,7 @@ class HexapodEnv(gym.Env):
 
     def step(self, action):
         action = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)
-        if self.terrain == "stairs":                # compass loop: turn back toward heading 0
+        if self.heading_hold:                       # compass loop: turn back toward heading 0
             w_, x_, y_, z_ = self.data.qpos[3:7]
             yaw = np.arctan2(2 * (w_ * z_ + x_ * y_), 1 - 2 * (y_ * y_ + z_ * z_))
             self.command[2] = np.clip(-1.0 * yaw, COMMAND_LOW[2], COMMAND_HIGH[2])

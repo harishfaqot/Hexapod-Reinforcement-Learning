@@ -91,6 +91,10 @@ Direct RL does not climb any stairs, even after 12M steps: it learns to walk at
 the commanded speed but not to hold its heading. Simulation only, with
 estimated masses and servo gains, and only three seeds.
 
+Second terrain, never seen in training: a field of random 10 cm bumps. The
+kinematic gait covers 1.59 m in 20 s, the three residual policies 2.54-2.70 m,
+at about half the energy per metre (`results_bumps.csv`).
+
 `EXPERIMENTS.md` has every attempt, including the failed ones, with full tables
 and diagnoses. Numbers: `results_40s.csv` (40 s limit) and `results.csv` (20 s limit).
 
