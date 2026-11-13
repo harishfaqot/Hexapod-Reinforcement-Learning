@@ -264,3 +264,33 @@ bias that the compass loop hides. `HexapodEnv` now has `heading_hold`, and
 has the IMU for it). The kinematic numbers did not change with it. The policies
 need the compass loop; that must be said in the paper, and the loop must run on
 the real robot.
+
+### Third terrain: a smooth ramp, also never trained on (2026-11-13)
+
+New terrain `--terrain slope`: a smooth ramp starting 0.5 m ahead, with the same
+average incline as stairs of that riser (`--height 0.10` = 10 cm rise per 25 cm
+= 21.8 degrees). Built from one tilted slab. No new training, same v3 policies.
+
+    python evaluate.py <controller> --terrain slope --height 0.04 0.06 0.08 0.10 0.125 0.15 --out results_slope.csv
+
+Net distance in 20 s, command 0.15 m/s, 20 trials. No falls anywhere.
+
+| Incline | Kinematic | Residual s0 | Residual s1 | Residual s2 | Direct 12M |
+|---|---|---|---|---|---|
+| 9 deg (0.04) | 2.53 m | 2.75 m | 2.60 m | 2.65 m | 0.39 m |
+| 13 deg (0.06) | 2.29 m | 2.34 m | 2.46 m | 2.43 m | 0.41 m |
+| 18 deg (0.08) | 1.99 m | 1.89 m | 2.27 m | 2.23 m | 0.42 m |
+| 22 deg (0.10) | 1.68 m | 1.48 m | 1.97 m | 2.00 m | 0.43 m |
+| 27 deg (0.125) | 1.19 m | 1.14 m | 1.65 m | 1.44 m | 0.45 m |
+| 31 deg (0.15) | 0.45 m | 0.47 m | 1.04 m | 1.21 m | 0.45 m |
+
+Finding: on a smooth ramp the stairs-trained policies give little. Seeds 1 and 2
+are 10-40% ahead of the gait on steep ramps, seed 0 is level with it or slightly
+behind. Everything slows down with the incline, and nothing walks well at 31
+degrees. This is the honest "RL does not add much here" case: a ramp has no
+edges to catch a foot on, so there is nothing for the blocked-leg signal to
+react to; the limit is servo torque and grip. The direct policy never reaches
+the ramp (it loops on the flat start).
+
+Summary over the three terrains: big gain on stairs (0% -> 100%), clear gain on
+high rubble (unseen), small or no gain on ramps (unseen).

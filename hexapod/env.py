@@ -38,14 +38,15 @@ class HexapodEnv(gym.Env):
                  randomize=False, episode_seconds=20.0, render_mode=None, heading_hold=None):
         """command: fixed (vx, vy, yaw_rate), or None to sample a new one each episode.
         terrain: "bumps" (random bumps everywhere) or "stairs" (8 steps up along +x,
-        starting 0.5 m ahead of the robot, then a flat top).
+        starting 0.5 m ahead of the robot, then a flat top) or "slope" (a smooth ramp
+        with the same average incline as stairs of that riser: terrain_height per 0.25 m).
         terrain_height: bump height or stair riser height in metres. With
         randomize=True each episode draws a height between 0 and this value.
         randomize: training-time randomization of friction, payload, servo gain,
         action delay, sensor noise and pushes.
         heading_hold: run the compass loop (see top of file). Default: on stairs only."""
         assert mode in ("residual", "direct")
-        assert terrain in ("bumps", "stairs")
+        assert terrain in ("bumps", "stairs", "slope")
         assert 0.0 <= terrain_height <= robot.TERRAIN_MAX_HEIGHT
         self.mode = mode
         self.terrain = terrain
@@ -54,7 +55,7 @@ class HexapodEnv(gym.Env):
         self.randomize = randomize
         self.max_steps = int(episode_seconds / CONTROL_DT)
         self.render_mode = render_mode
-        self.heading_hold = terrain == "stairs" if heading_hold is None else heading_hold
+        self.heading_hold = terrain != "bumps" if heading_hold is None else heading_hold
 
         self.model = mujoco.MjModel.from_xml_string(robot.build_xml())
         self.data = mujoco.MjData(self.model)
@@ -99,6 +100,14 @@ class HexapodEnv(gym.Env):
         if self.terrain == "bumps":
             field = self.np_random.uniform(0, height / robot.TERRAIN_MAX_HEIGHT, (n, n))
             field[n // 2 - 8: n // 2 + 8, n // 2 - 8: n // 2 + 8] = 0.0     # flat 0.8 m start pad
+        elif self.terrain == "slope" and height > 0:
+            # one slab tilted about y, its top surface meeting the ground at x = STAIR_START
+            angle = np.arctan(height / 0.25)
+            c, s = np.cos(angle), np.sin(angle)
+            length, _, thick = robot.STAIR_SLAB
+            self.data.mocap_pos[self.stair_mocap[0]] = [robot.STAIR_START + c * length + s * thick, 0.0,
+                                                        s * length - c * thick]
+            self.data.mocap_quat[self.stair_mocap[0]] = [np.cos(angle / 2), 0.0, -np.sin(angle / 2), 0.0]
         elif height > 0:
             tread = self.np_random.uniform(0.20, 0.30) if self.randomize else 0.25
             for i, mocap in enumerate(self.stair_mocap):
@@ -138,7 +147,7 @@ class HexapodEnv(gym.Env):
         self.last_action = np.zeros(18)
         self.command = (self.fixed_command.copy() if self.fixed_command is not None
                         else self.np_random.uniform(COMMAND_LOW, COMMAND_HIGH))
-        if self.terrain == "stairs" and self.fixed_command is None:
+        if self.terrain != "bumps" and self.fixed_command is None:
             self.command[1:] = 0.0                  # walk straight at the stairs
         return self._obs(), {}
 

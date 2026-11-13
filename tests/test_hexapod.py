@@ -67,6 +67,20 @@ def test_stairs_are_where_they_should_be():
         assert (step + 0.3) * 0.04 < env.data.qpos[2] - standing < (step + 2) * 0.04, (step, env.data.qpos[2])
 
 
+def test_slope_is_a_solid_ramp():
+    env = HexapodEnv(terrain="slope", terrain_height=0.10, command=(0, 0, 0))
+    env.reset(seed=0)
+    hit = np.zeros(1, np.int32)
+    ground = lambda x: 2.0 - mujoco.mj_ray(env.model, env.data, [x, 1.0, 2.0], [0, 0, -1], None, 1, -1, hit)
+    assert abs(ground(0.3)) < 1e-6
+    assert abs(ground(1.5) - 1.0 * 0.10 / 0.25) < 1e-6          # 1 m up the ramp
+    standing = robot.HOME_HEIGHT + robot.FOOT_RADIUS
+    env.data.qpos[:3] = [1.5, 0, 0.4 + standing + 0.05]         # drop the robot on the ramp: it must rest on it
+    for _ in range(40):
+        env.step(np.zeros(18))
+    assert 0.2 < env.data.qpos[2] - standing < 0.5, env.data.qpos[:3]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

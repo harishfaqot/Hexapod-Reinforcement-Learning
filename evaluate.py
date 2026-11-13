@@ -87,7 +87,7 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("controller", help='"kinematic" or a run directory such as runs/residual_s0')
-    p.add_argument("--terrain", choices=["bumps", "stairs"], default="stairs")
+    p.add_argument("--terrain", choices=["bumps", "stairs", "slope"], default="stairs")
     p.add_argument("--height", type=float, nargs="+", default=[0.0, 0.04, 0.06, 0.08, 0.10],
                    help="bump heights or stair riser heights to test [m]")
     p.add_argument("--episodes", type=int, default=20)

@@ -73,7 +73,7 @@ distance, forward speed, velocity tracking error (RMSE), body tilt (RMS) and
 mechanical cost of transport (energy / weight / distance).
 
 The kinematic baseline is tuned: its foot lift (6 cm) is the best of 4, 6, 8 and
-10 cm on this task. `--terrain bumps` tests random bumps instead of stairs.
+10 cm on this task. `--terrain bumps` tests random bumps and `--terrain slope` a smooth ramp.
 
 ## Results so far
 
@@ -94,6 +94,10 @@ estimated masses and servo gains, and only three seeds.
 Second terrain, never seen in training: a field of random 10 cm bumps. The
 kinematic gait covers 1.59 m in 20 s, the three residual policies 2.54-2.70 m,
 at about half the energy per metre (`results_bumps.csv`).
+
+Third terrain, also unseen: a smooth ramp (`--terrain slope`). Here the residual
+policies give little: two seeds are 10-40% ahead on steep ramps, one is level
+with the gait (`results_slope.csv`). Learning helps where feet catch on edges.
 
 `EXPERIMENTS.md` has every attempt, including the failed ones, with full tables
 and diagnoses. Numbers: `results_40s.csv` (40 s limit) and `results.csv` (20 s limit).
