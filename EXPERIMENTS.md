@@ -195,3 +195,28 @@ spending more of the training on the stairs the gait cannot climb.
 Note: the first 40 s run showed every controller "falling" on flat ground at
 exactly 5 m. The robot had walked off the edge of the simulated floor. The
 floor is now 20 m wide and the table above is from the corrected run.
+
+### v3long — direct RL, 12M steps (2026-11-13, still training when this was written)
+
+Run: `runs/v3long_direct_stairs_s0`. Same code as v3, 12M steps instead of 3M.
+
+Interim check at 9.4M steps (10 trials, 40 s): climbed 0% at every height,
+net distance 1.22 m on flat ground and 0.31-0.65 m on stairs.
+
+What it does: it walks forward at the right speed in its own frame (0.12-0.14 m/s,
+commanded 0.15), so the speed part is learned. But it cannot hold its heading.
+Traced on flat ground: it turned 89 degrees in the first 2 s, slowly came back
+while the compass loop commanded a turn, then swung away again as soon as it
+faced forward. It follows large turn commands at about half the commanded rate
+and drifts when the command is near zero. Net result: it walks in loops near the start.
+
+Reading: with 4x the training, direct RL learned to walk but not to steer.
+The kinematic gait gives straight walking and turning for free, which is the
+practical advantage of the residual design in this comparison.
+
+To do when the run ends: `python evaluate.py runs/v3long_direct_stairs_s0 --seconds 40 --out results_40s.csv`
+and replace this interim note with the final numbers.
+
+Idea for v4 (not done): reward progress toward the stairs in the world frame,
+instead of body-frame speed plus a yaw-rate command. Walking in loops would then
+earn nothing, which should help the direct policy most.
