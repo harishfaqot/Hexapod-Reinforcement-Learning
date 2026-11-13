@@ -294,3 +294,43 @@ the ramp (it loops on the flat start).
 
 Summary over the three terrains: big gain on stairs (0% -> 100%), clear gain on
 high rubble (unseen), small or no gain on ramps (unseen).
+
+### Two more unseen terrains: stairs down and bars (2026-11-13)
+
+New terrains, again tested without any new training (v3 policies, trained on stairs up only):
+
+- `--terrain descend`: the robot starts on a platform and walks down 8 steps (40 s limit).
+- `--terrain bars`: thresholds lying across the path every 0.3-0.6 m, like door
+  sills or cables. 10-15 cm wide, `--height` high (20 s limit).
+
+Stairs down (`results_descend.csv`): the kinematic gait and all three residual
+seeds get down 4, 6, 8 and 10 cm steps in 20 of 20 trials, no falls. No gap
+here: walking down stairs does not need learning on this robot. The direct
+policy gets down 0 of 20.
+
+Bars, net distance in 20 s (`results_bars.csv`), no falls:
+
+| Bar height | Kinematic | Residual s0 | Residual s1 | Residual s2 | Direct 12M |
+|---|---|---|---|---|---|
+| 2 cm | 2.84 m | 3.39 m | 2.89 m | 3.27 m | 0.37 m |
+| 4 cm | 2.68 m | 3.41 m | 2.79 m | 3.20 m | 0.30 m |
+| 6 cm | 1.91 m | 3.15 m | 2.75 m | 2.67 m | 0.40 m |
+| 8 cm | 0.47 m | 1.67 m | 1.84 m | 1.30 m | 0.44 m |
+| 10 cm | 0.62 m | 0.59 m | 0.98 m | 0.68 m | 0.43 m |
+
+Finding: the gait slows at 6 cm bars and is stuck at 8 cm. The residual policies
+keep close to full speed at 6 cm and still cross 8 cm bars at about half speed.
+At 10 cm everything is stuck.
+
+Summary over five terrains (only stairs up was trained on):
+
+| Terrain | What residual RL adds over the tuned gait |
+|---|---|
+| Stairs up, 8-10 cm | 0% -> 100% climbed |
+| Bars, 6-8 cm | 1.4-1.7x the distance at 6 cm, 3-4x at 8 cm |
+| Rubble, 10 cm | 1.6-1.7x the distance |
+| Ramp | little or nothing |
+| Stairs down | nothing (both always succeed) |
+
+The pattern: learning pays where a foot or the body gets caught on an edge
+going forward or up, and not on smooth or downhill ground.

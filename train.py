@@ -21,6 +21,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from hexapod import HexapodEnv
+from hexapod.env import TERRAINS
 
 
 class SaveLatest(BaseCallback):
@@ -46,7 +47,7 @@ def main():
     p.add_argument("--mode", choices=["residual", "direct"], required=True)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--timesteps", type=int, default=3_000_000)
-    p.add_argument("--terrain", choices=["bumps", "stairs", "slope"], default="stairs")
+    p.add_argument("--terrain", choices=TERRAINS, default="stairs")
     p.add_argument("--height", type=float, default=0.10, help="max bump or stair riser height in training [m]")
     p.add_argument("--n-envs", type=int, default=16)
     args = p.parse_args()

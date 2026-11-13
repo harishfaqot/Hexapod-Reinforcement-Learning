@@ -144,6 +144,7 @@ def build_xml() -> str:
   <asset>
     <hfield name="terrain" nrow="{TERRAIN_CELLS}" ncol="{TERRAIN_CELLS}"
             size="{TERRAIN_SIZE} {TERRAIN_SIZE} {TERRAIN_MAX_HEIGHT} 0.05"/>
+    <texture type="skybox" builtin="gradient" rgb1=".5 .68 .9" rgb2=".95 .96 1" width="256" height="256"/>
     <texture name="grid" type="2d" builtin="checker" width="256" height="256" rgb1=".75 .8 .75" rgb2=".65 .7 .65"/>
     <material name="grid" texture="grid" texrepeat="20 20"/>
   </asset>

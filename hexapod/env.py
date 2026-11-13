@@ -29,6 +29,7 @@ RESIDUAL_SCALE = 0.3         # rad of correction on top of the gait
 DIRECT_SCALE = 0.6           # rad of offset around the standing pose
 COMMAND_LOW = np.array([0.05, -0.05, -0.4])     # vx, vy [m/s], yaw rate [rad/s]
 COMMAND_HIGH = np.array([0.20, 0.05, 0.4])
+TERRAINS = ("stairs", "descend", "slope", "bumps", "bars")
 
 
 class HexapodEnv(gym.Env):
@@ -39,14 +40,16 @@ class HexapodEnv(gym.Env):
         """command: fixed (vx, vy, yaw_rate), or None to sample a new one each episode.
         terrain: "bumps" (random bumps everywhere) or "stairs" (8 steps up along +x,
         starting 0.5 m ahead of the robot, then a flat top) or "slope" (a smooth ramp
-        with the same average incline as stairs of that riser: terrain_height per 0.25 m).
+        with the same average incline as stairs of that riser: terrain_height per 0.25 m),
+        "descend" (the robot starts on a platform and walks down 8 steps) or "bars"
+        (thresholds lying across the path every 0.3-0.6 m, like door sills or cables).
         terrain_height: bump height or stair riser height in metres. With
         randomize=True each episode draws a height between 0 and this value.
         randomize: training-time randomization of friction, payload, servo gain,
         action delay, sensor noise and pushes.
         heading_hold: run the compass loop (see top of file). Default: on stairs only."""
         assert mode in ("residual", "direct")
-        assert terrain in ("bumps", "stairs", "slope")
+        assert terrain in TERRAINS
         assert 0.0 <= terrain_height <= robot.TERRAIN_MAX_HEIGHT
         self.mode = mode
         self.terrain = terrain
@@ -97,9 +100,22 @@ class HexapodEnv(gym.Env):
         height = self.terrain_height * (self.np_random.uniform() if self.randomize else 1.0)
         n = robot.TERRAIN_CELLS
         field = np.zeros((n, n))
+        tread = self.np_random.uniform(0.20, 0.30) if self.randomize else 0.25
+        self.start_height = robot.STAIR_STEPS * height if self.terrain == "descend" else 0.0
         if self.terrain == "bumps":
             field = self.np_random.uniform(0, height / robot.TERRAIN_MAX_HEIGHT, (n, n))
             field[n // 2 - 8: n // 2 + 8, n // 2 - 8: n // 2 + 8] = 0.0     # flat 0.8 m start pad
+        elif self.terrain == "bars":
+            x = robot.STAIR_START
+            while x < robot.TERRAIN_SIZE - 1.0:
+                col = n // 2 + round(x / (2 * robot.TERRAIN_SIZE / n))
+                field[:, col: col + 2] = height / robot.TERRAIN_MAX_HEIGHT      # hfield rows are y, columns are x
+                x += self.np_random.uniform(0.3, 0.6)
+        elif self.terrain == "descend":
+            # slab i ends at step i and reaches back under the start platform
+            for i, mocap in enumerate(self.stair_mocap):
+                self.data.mocap_pos[mocap] = [robot.STAIR_START + i * tread - robot.STAIR_SLAB[0], 0.0,
+                                             (robot.STAIR_STEPS - i) * height - robot.STAIR_SLAB[2]]
         elif self.terrain == "slope" and height > 0:
             # one slab tilted about y, its top surface meeting the ground at x = STAIR_START
             angle = np.arctan(height / 0.25)
@@ -109,7 +125,6 @@ class HexapodEnv(gym.Env):
                                                         s * length - c * thick]
             self.data.mocap_quat[self.stair_mocap[0]] = [np.cos(angle / 2), 0.0, -np.sin(angle / 2), 0.0]
         elif height > 0:
-            tread = self.np_random.uniform(0.20, 0.30) if self.randomize else 0.25
             for i, mocap in enumerate(self.stair_mocap):
                 self.data.mocap_pos[mocap] = [robot.STAIR_START + i * tread + robot.STAIR_SLAB[0], 0.0,
                                              (i + 1) * height - robot.STAIR_SLAB[2]]
@@ -138,7 +153,7 @@ class HexapodEnv(gym.Env):
         yaw = self.np_random.uniform(-0.15, 0.15)       # no two episodes meet the terrain the same way
         self.data.qpos[0:2] = self.np_random.uniform(-0.1, 0.1, 2)
         self.data.qpos[3:7] = [np.cos(yaw / 2), 0, 0, np.sin(yaw / 2)]
-        self.data.qpos[2] = robot.HOME_HEIGHT + robot.FOOT_RADIUS + 0.01
+        self.data.qpos[2] = self.start_height + robot.HOME_HEIGHT + robot.FOOT_RADIUS + 0.01
         self.data.qpos[7:] = robot.DEFAULT_POSE
         self.data.ctrl[:] = robot.DEFAULT_POSE
         mujoco.mj_forward(self.model, self.data)

@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from hexapod import HexapodEnv, robot
-from hexapod.env import CONTROL_DT
+from hexapod.env import CONTROL_DT, TERRAINS
 
 FIELDS = ["controller", "terrain", "height_m", "episodes", "fall_rate", "climbed_rate", "distance_m", "speed_mps",
           "tracking_rmse_mps", "tilt_rms_rad", "cost_of_transport"]
@@ -66,15 +66,16 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
             if render:
                 time.sleep(CONTROL_DT)
         falls += terminated
-        on_top = env.data.qpos[2] > robot.STAIR_STEPS * height + 0.5 * robot.HOME_HEIGHT    # really up there, not inside
+        # going up: really on the top, not inside the stairs. Going down: past the last step is enough.
+        on_top = terrain == "descend" or env.data.qpos[2] > robot.STAIR_STEPS * height + 0.5 * robot.HOME_HEIGHT
         climbed += bool(env.data.qpos[0] > stairs_top and on_top and not terminated)
         distance += float(np.linalg.norm(env.data.qpos[:2] - start))
     env.close()
     return {
         "controller": controller, "terrain": terrain, "height_m": height, "episodes": episodes,
         "fall_rate": falls / episodes,
-        # stairs only: share of episodes that reached the top without falling
-        "climbed_rate": climbed / episodes if terrain == "stairs" else float("nan"),
+        # stairs up or down: share of episodes that got past the whole staircase without falling
+        "climbed_rate": climbed / episodes if terrain in ("stairs", "descend") else float("nan"),
         "distance_m": distance / episodes,
         "speed_mps": float(np.mean(speeds)),
         "tracking_rmse_mps": float(np.sqrt(np.mean(sq_errors))),
@@ -87,7 +88,7 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("controller", help='"kinematic" or a run directory such as runs/residual_s0')
-    p.add_argument("--terrain", choices=["bumps", "stairs", "slope"], default="stairs")
+    p.add_argument("--terrain", choices=TERRAINS, default="stairs")
     p.add_argument("--height", type=float, nargs="+", default=[0.0, 0.04, 0.06, 0.08, 0.10],
                    help="bump heights or stair riser heights to test [m]")
     p.add_argument("--episodes", type=int, default=20)

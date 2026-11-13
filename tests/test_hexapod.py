@@ -38,7 +38,8 @@ def test_kinematic_gait_walks_forward():
 
 def test_env_follows_gym_api():
     from stable_baselines3.common.env_checker import check_env
-    for mode, terrain in (("residual", "bumps"), ("direct", "stairs")):
+    from hexapod.env import TERRAINS
+    for mode, terrain in [("residual", t) for t in TERRAINS] + [("direct", "stairs")]:
         check_env(HexapodEnv(mode=mode, terrain=terrain, terrain_height=0.02, randomize=True))
 
 
@@ -79,6 +80,22 @@ def test_slope_is_a_solid_ramp():
     for _ in range(40):
         env.step(np.zeros(18))
     assert 0.2 < env.data.qpos[2] - standing < 0.5, env.data.qpos[:3]
+
+
+def test_descend_and_bars():
+    hit = np.zeros(1, np.int32)
+    env = HexapodEnv(terrain="descend", terrain_height=0.05, command=(0, 0, 0))
+    env.reset(seed=0)
+    ground = lambda x: 2.0 - mujoco.mj_ray(env.model, env.data, [x, 1.0, 2.0], [0, 0, -1], None, 1, -1, hit)
+    assert abs(ground(0.3) - 0.40) < 1e-6 and abs(ground(0.5 + 0.125) - 0.35) < 1e-6 and abs(ground(3.0)) < 1e-6
+    for _ in range(40):
+        env.step(np.zeros(18))
+    assert abs(env.data.qpos[2] - 0.40 - robot.HOME_HEIGHT - robot.FOOT_RADIUS) < 0.02     # stands on the platform
+
+    env = HexapodEnv(terrain="bars", terrain_height=0.05)
+    env.reset(seed=0)
+    heights = [ground(x) for x in np.arange(0.5, 3.0, 0.01)]
+    assert abs(ground(0.3)) < 1e-6 and abs(max(heights) - 0.05) < 1e-3 and min(heights) < 1e-6
 
 
 if __name__ == "__main__":
