@@ -262,6 +262,10 @@ class HexapodEnvDirect(gym.Env):
 
         r_vel = _vel_reward(vx_actual, vtar_x) + _vel_reward(vy_actual, vtar_y)
 
+        print(f"vx_actual={vx_actual:.3f}  vy_actual={vy_actual:.3f}  "
+              f"vx_tar={vtar_x:.3f}  vy_tar={vtar_y:.3f}  "
+              f"r_vel={r_vel:.3f}")
+
         # ── 2. Yaw tracking ───────────────────────────────────────────────────
         yaw_err = self.wcmd_yaw - wyaw_actual
         r_yaw = float(np.exp(-2.0 * yaw_err**2))
@@ -303,10 +307,10 @@ class HexapodEnvDirect(gym.Env):
             + 0.3 * r_yaw
             + r_height         # anti-jump 1: torso height deviation
             + r_vz             # anti-jump 2: vertical velocity
-            + r_posture
-            + r_contact        # gait structure: tripod preferred
-            + r_energy
-            + r_alive
+            # + r_posture
+            # + r_contact        # gait structure: tripod preferred
+            # + r_energy
+            # + r_alive
         )
         return float(total)
 
@@ -362,6 +366,10 @@ class HexapodEnvDirect(gym.Env):
         terminated = self._is_terminated()
         self.step_count += 1
         truncated  = self.step_count >= self.max_steps
+
+        # Add termination penalty
+        if terminated:
+            reward -= 10.0  # Heavy penalty for termination
 
         return obs, reward, terminated, truncated, \
                {"vcmd_xy": self.vcmd_xy.copy(), "wcmd_yaw": float(self.wcmd_yaw)}

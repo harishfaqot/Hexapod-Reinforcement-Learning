@@ -1,1 +1,6 @@
 /videos
+.venv/
+__pycache__/
+*.pyc
+runs/
+results.csv

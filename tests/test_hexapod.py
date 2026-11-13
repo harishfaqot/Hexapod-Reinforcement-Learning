@@ -1,0 +1,74 @@
+"""Run with:  python -m tests.test_hexapod   (or pytest)"""
+import mujoco
+import numpy as np
+
+from hexapod import HexapodEnv, robot
+
+
+def test_ik_matches_simulated_model():
+    """Put the joints where IK says and check the simulated feet land on the targets."""
+    env = HexapodEnv()
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        targets = robot.HOME + rng.uniform(-0.015, 0.015, (6, 3))   # stays inside the leg's reach
+        env.data.qpos[:7] = [0, 0, 0.3, 1, 0, 0, 0]
+        env.data.qpos[7:] = robot.inverse_kinematics(targets)
+        mujoco.mj_forward(env.model, env.data)
+        for i, name in enumerate(robot.LEG_NAMES):
+            tibia = env.data.body(f"tibia_{name}")
+            foot = tibia.xpos + tibia.xmat.reshape(3, 3) @ [0, 0, -robot.TIBIA] - [0, 0, 0.3]
+            assert np.allclose(foot, targets[i], atol=1e-6), (name, foot, targets[i])
+
+
+def test_kinematic_gait_walks_forward():
+    """Baseline sanity check, and a guard on the sign and frame of the velocity signal."""
+    env = HexapodEnv(mode="residual", command=(0.15, 0.0, 0.0), episode_seconds=10)
+    env.reset(seed=0)
+    speeds = []
+    done = False
+    while not done:
+        _, _, terminated, truncated, info = env.step(np.zeros(18))
+        speeds.append(info["body_velocity"][0])
+        assert not terminated
+        done = truncated
+    distance = env.data.qpos[0]
+    assert 0.9 < distance < 1.8, distance                         # commanded 1.5 m
+    assert abs(np.mean(speeds) * 10 - distance) < 0.15            # body velocity agrees with real travel
+
+
+def test_env_follows_gym_api():
+    from stable_baselines3.common.env_checker import check_env
+    for mode, terrain in (("residual", "bumps"), ("direct", "stairs")):
+        check_env(HexapodEnv(mode=mode, terrain=terrain, terrain_height=0.02, randomize=True))
+
+
+def test_stairs_are_where_they_should_be():
+    """Measure the ground height with a ray: 0 on the flat start, 8 risers on the top."""
+    env = HexapodEnv(terrain="stairs", terrain_height=0.04)
+    env.reset(seed=0)
+
+    def ground(x):
+        hit = np.zeros(1, np.int32)
+        return 1.0 - mujoco.mj_ray(env.model, env.data, [x, 1.0, 1.0], [0, 0, -1], None, 1, -1, hit)
+
+    assert abs(ground(0.3)) < 1e-6
+    assert abs(ground(0.5 + 0.125) - 0.04) < 1e-6        # middle of the first step
+    assert abs(ground(3.5) - 8 * 0.04) < 1e-6
+
+    # Rays are not enough: also check that every step is solid for the robot's feet.
+    standing = robot.HOME_HEIGHT + robot.FOOT_RADIUS
+    for step in range(8):
+        env = HexapodEnv(terrain="stairs", terrain_height=0.04, command=(0, 0, 0))
+        env.reset(seed=0)
+        env.data.qpos[:7] = [0.5 + (step + 0.5) * 0.25, 0, (step + 1) * 0.04 + standing + 0.02, 1, 0, 0, 0]
+        for _ in range(40):
+            env.step(np.zeros(18))
+        # the robot is wider than one step, so it rests between this step's height and the next one's
+        assert (step + 0.3) * 0.04 < env.data.qpos[2] - standing < (step + 2) * 0.04, (step, env.data.qpos[2])
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_"):
+            fn()
+            print("ok", name)
