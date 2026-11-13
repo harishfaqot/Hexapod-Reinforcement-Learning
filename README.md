@@ -83,14 +83,13 @@ Share of 20 trials that reached the top of the stairs within 40 s
 | Riser | Kinematic gait | Residual seed 0 | Residual seed 1 | Residual seed 2 |
 |---|---|---|---|---|
 | 0-6 cm | 100% | 100% | 100% | 100% |
-| 8 cm | 0% | 100% | 100% | 0% |
-| 10 cm | 0% | 100% | 100% | 0% |
+| 8 cm | 0% | 100% | 100% | 100% |
+| 10 cm | 0% | 100% | 100% | 100% |
 
-Two of three seeds climb stairs the tuned kinematic gait cannot, with no falls.
-The third seed learned nothing beyond the gait, so the method is not yet
-reliable across seeds. Direct RL has not learned the task within 3M steps; a
-12M-step run is the next check. Simulation only, with estimated masses and
-servo gains.
+All three seeds climb stairs the tuned kinematic gait cannot, with no falls.
+Direct RL does not climb any stairs, even after 12M steps: it learns to walk at
+the commanded speed but not to hold its heading. Simulation only, with
+estimated masses and servo gains, and only three seeds.
 
 `EXPERIMENTS.md` has every attempt, including the failed ones, with full tables
 and diagnoses. Numbers: `results_40s.csv` (40 s limit) and `results.csv` (20 s limit).

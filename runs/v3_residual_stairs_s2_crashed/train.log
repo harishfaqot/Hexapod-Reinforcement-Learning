@@ -1,0 +1,30 @@
+Using cpu device
+Logging to runs\v3_residual_stairs_s2\PPO_1
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 500      |
+|    ep_rew_mean     | -116     |
+| time/              |          |
+|    fps             | 938      |
+|    iterations      | 1        |
+|    time_elapsed    | 8        |
+|    total_timesteps | 8192     |
+---------------------------------
+Saved to runs\v3_residual_stairs_s2
+Traceback (most recent call last):
+  File "d:\github\Hexapod-Reinforcement-Learning\train.py", line 78, in <module>
+    main()
+  File "d:\github\Hexapod-Reinforcement-Learning\train.py", line 71, in main
+    model.learn(total_timesteps=args.timesteps, callback=SaveLatest(run_dir))
+  File "D:\github\Hexapod-Reinforcement-Learning\.venv\Lib\site-packages\stable_baselines3\ppo\ppo.py", line 311, in learn
+    return super().learn(
+           ^^^^^^^^^^^^^^
+  File "D:\github\Hexapod-Reinforcement-Learning\.venv\Lib\site-packages\stable_baselines3\common\on_policy_algorithm.py", line 324, in learn
+    continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\github\Hexapod-Reinforcement-Learning\.venv\Lib\site-packages\stable_baselines3\common\on_policy_algorithm.py", line 187, in collect_rollouts
+    rollout_buffer.reset()
+  File "D:\github\Hexapod-Reinforcement-Learning\.venv\Lib\site-packages\stable_baselines3\common\buffers.py", line 392, in reset
+    self.observations = np.zeros((self.buffer_size, self.n_envs, *self.obs_shape), dtype=self.observation_space.dtype)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 2.03 MiB for an array with shape (512, 16, 65) and data type float32

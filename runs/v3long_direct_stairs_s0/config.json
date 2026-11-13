@@ -1,0 +1,9 @@
+{
+  "tag": "v3long",
+  "mode": "direct",
+  "seed": 0,
+  "timesteps": 12000000,
+  "terrain": "stairs",
+  "height": 0.1,
+  "n_envs": 16
+}

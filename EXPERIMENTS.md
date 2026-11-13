@@ -173,7 +173,7 @@ of the 2.5 m needed: it was slow, not stuck. The 20 s limit mixes up "slow" and
 
 Climbed within 40 s, 20 trials each. No trial ended with the robot tipped over.
 
-| Riser | Kinematic | Residual seed 0 | Residual seed 1 | Residual seed 2 |
+| Riser | Kinematic | Residual seed 0 | Residual seed 1 | Residual seed 2 (first try, INVALID) |
 |---|---|---|---|---|
 | 0 cm | 100% | 100% | 100% | 100% |
 | 4 cm | 100% | 100% | 100% | 100% |
@@ -181,22 +181,31 @@ Climbed within 40 s, 20 trials each. No trial ended with the robot tipped over.
 | 8 cm | 0% | 100% | 100% | 0% |
 | 10 cm | 0% | 100% | 100% | 0% |
 
-Finding: two of three seeds climb 8 cm and 10 cm stairs in every trial, where
-the kinematic gait never does. Seed 2 learned nothing useful: its numbers match
-the kinematic gait almost exactly at every height (for example 2.19 m against
-2.37 m at 8 cm), which means its corrections stayed close to zero.
+**Correction (same day): the seed 2 column above is not a result.** That run
+crashed with an out-of-memory error after its first update (8,192 of 3,000,000
+steps; three trainings were running at once). The saved policy was untrained,
+so it behaved like the kinematic gait. The earlier reading here ("seed 2
+learned nothing, the method is not reliable across seeds") was wrong. The
+user spotted it from the learning curve that stopped. The crashed run is kept
+as `runs/v3_residual_stairs_s2_crashed`, its rows were removed from the CSV
+files, and seed 2 was trained again (see below). `evaluate.py` now prints how
+many steps a policy was trained for and warns when the run did not finish.
 
-So the method works but is not reliable across seeds yet. Doing nothing is a
-safe choice for a residual policy (it keeps the gait's reward on easy stairs),
-and one seed settled there. Before a paper: more seeds (at least 5), and a
-change that makes the outcome repeatable, for example longer training or
-spending more of the training on the stairs the gait cannot climb.
+Seed 2 trained again, full 3M steps (`runs/v3_residual_stairs_s2`), 40 s, 20 trials:
+climbed 100% at 0, 4, 6, 8 and 10 cm, no falls. It is slower and tilts more on
+10 cm stairs than on the lower ones (0.112 m/s, tilt 0.27 rad RMS).
+
+Finding: all three seeds climb 8 cm and 10 cm stairs in every trial, where the
+kinematic gait never does. Three seeds is still a small number; a paper needs
+at least 5.
+
+Lesson: check that a run reached its planned step count before testing it.
 
 Note: the first 40 s run showed every controller "falling" on flat ground at
 exactly 5 m. The robot had walked off the edge of the simulated floor. The
 floor is now 20 m wide and the table above is from the corrected run.
 
-### v3long — direct RL, 12M steps (2026-11-13, still training when this was written)
+### v3long — direct RL, 12M steps (2026-11-13)
 
 Run: `runs/v3long_direct_stairs_s0`. Same code as v3, 12M steps instead of 3M.
 
@@ -214,8 +223,10 @@ Reading: with 4x the training, direct RL learned to walk but not to steer.
 The kinematic gait gives straight walking and turning for free, which is the
 practical advantage of the residual design in this comparison.
 
-To do when the run ends: `python evaluate.py runs/v3long_direct_stairs_s0 --seconds 40 --out results_40s.csv`
-and replace this interim note with the final numbers.
+Final, after all 12M steps (20 trials, 40 s, `results_40s.csv`): climbed 0% at
+every height, no falls. Body-frame speed 0.135-0.153 m/s (commanded 0.15), but
+net distance only 1.6-1.8 m in 40 s (a straight walk would cover 6 m). Same
+picture as the interim check: it walks, it does not steer.
 
 Idea for v4 (not done): reward progress toward the stairs in the world frame,
 instead of body-frame speed plus a yaw-rate command. Walking in loops would then

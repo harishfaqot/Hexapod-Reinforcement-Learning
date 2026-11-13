@@ -34,6 +34,9 @@ def load_policy(run_dir: Path, env):
             if attempt == 4:
                 raise
             time.sleep(0.5)
+    planned = json.loads((run_dir / "config.json").read_text()).get("timesteps", 0)
+    print(f"policy trained for {model.num_timesteps:,} steps" +
+          (f"  WARNING: run planned {planned:,}, it is unfinished or crashed" if model.num_timesteps < planned else ""))
     norm.training = False
     return lambda obs: model.predict(norm.normalize_obs(obs), deterministic=True)[0]
 
