@@ -98,6 +98,24 @@ def test_descend_and_bars():
     assert abs(ground(0.3)) < 1e-6 and abs(max(heights) - 0.05) < 1e-3 and min(heights) < 1e-6
 
 
+def test_course_layout():
+    env = HexapodEnv(terrain="course", terrain_height=0.05)
+    env.reset(seed=0)
+    hit = np.zeros(1, np.int32)
+    ground = lambda x: 2.0 - mujoco.mj_ray(env.model, env.data, [x, 1.0, 2.0], [0, 0, -1], None, 1, -1, hit)
+    assert abs(ground(0.2)) < 1e-6                              # start pad
+    assert max(ground(x) for x in np.arange(0.5, 2.4, 0.01)) > 0.049      # bars
+    assert max(ground(x) for x in np.arange(2.6, 4.4, 0.01)) > 0.03       # rubble
+    assert abs(ground(4.8)) < 1e-6 and abs(ground(8.2)) < 1e-6  # flat before and after the stairs
+    assert abs(ground(5.1) - 0.05) < 1e-6 and abs(ground(6.5) - 0.20) < 1e-6 and abs(ground(7.9) - 0.05) < 1e-6
+    assert abs(ground(9.5) - 1.0 * 0.05 / 0.25) < 1e-6          # finish line, 1 m up the ramp
+    for side in (1, -1):                                        # walls 1.5 m to each side
+        assert abs(mujoco.mj_ray(env.model, env.data, [1.0, 0, 0.3], [0, side, 0], None, 1, -1, hit) - 1.5) < 1e-6
+    env = HexapodEnv(terrain="stairs", terrain_height=0.05)     # and no walls anywhere else
+    env.reset(seed=0)
+    assert mujoco.mj_ray(env.model, env.data, [0.0, 0, 0.3], [0, 1, 0], None, 1, -1, hit) < 0
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

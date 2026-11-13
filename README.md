@@ -74,7 +74,8 @@ mechanical cost of transport (energy / weight / distance).
 
 The kinematic baseline is tuned: its foot lift (6 cm) is the best of 4, 6, 8 and
 10 cm on this task. Other test terrains: `--terrain bumps` (rubble), `slope` (ramp),
-`descend` (stairs down) and `bars` (thresholds across the path).
+`descend` (stairs down), `bars` (thresholds across the path) and `course`
+(all of them in a row between two walls, use `--seconds 90`).
 
 ## Results so far
 
@@ -103,6 +104,10 @@ with the gait (`results_slope.csv`). Learning helps where feet catch on edges.
 Two more unseen terrains: bars across the path (`--terrain bars`), where the
 gait is stuck at 8 cm and the residual policies still cross at about half speed,
 and stairs down (`--terrain descend`), where the gait already succeeds every time.
+
+All obstacles in one walled 3 m corridor (`--terrain course`, `results_course.csv`):
+at 8 cm the gait stops at the first bar and only one residual seed finishes
+(70% of trials); at 6 cm two seeds finish every time, the gait 85%, one seed 35%.
 
 `EXPERIMENTS.md` has every attempt, including the failed ones, with full tables
 and diagnoses. Numbers: `results_40s.csv` (40 s limit) and `results.csv` (20 s limit).

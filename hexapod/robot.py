@@ -107,6 +107,15 @@ def gait_joint_targets(t: float, command) -> np.ndarray:
 DEFAULT_POSE = inverse_kinematics(HOME)
 JOINT_LIMIT = np.tile([JOINT_RANGE["coxa"], JOINT_RANGE["femur"], JOINT_RANGE["tibia"]], 6)
 
+# The obstacle course (terrain="course"): a 3 m wide corridor between two walls, along +x.
+#   0.5-2.5 m bars | 2.5-4.5 m rubble | 5-8 m stairs up 4, platform, stairs down 4 | 8.5 m ramp | finish
+COURSE_WIDTH = 3.0
+COURSE_BARS = (0.5, 2.5)
+COURSE_RUBBLE = (2.5, 4.5)
+COURSE_PYRAMID = 6.5        # x of the middle of the platform; layer k is 3.0 - 0.5 k metres long
+COURSE_RAMP = 8.5
+COURSE_FINISH = 9.5         # 1 m up the ramp
+
 
 def build_xml() -> str:
     """MuJoCo model. Each leg lives in its own frame with x pointing outward,
@@ -132,6 +141,13 @@ def build_xml() -> str:
         # (Editing geom_pos instead leaves MuJoCo's collision lookup stale and feet fall through.)
         f'<body name="stair_{i}" mocap="true" pos="0 0 -1"><geom type="box" conaffinity="1" rgba=".6 .6 .65 1" '
         f'size="{STAIR_SLAB[0]} {STAIR_SLAB[1]} {STAIR_SLAB[2]}"/></body>' for i in range(STAIR_STEPS))
+    # course-only pieces, parked far below the ground on every other terrain
+    stairs += "".join(
+        f'<body name="layer_{k}" mocap="true" pos="0 0 -3"><geom type="box" conaffinity="1" rgba=".6 .6 .65 1" '
+        f'size="{1.5 - 0.25 * k} {COURSE_WIDTH / 2} {STAIR_SLAB[2]}"/></body>' for k in range(4))
+    stairs += "".join(
+        f'<body name="wall_{k}" mocap="true" pos="0 0 -3"><geom type="box" conaffinity="1" rgba=".8 .5 .3 .35" '
+        f'size="{TERRAIN_SIZE} 0.05 0.75"/></body>' for k in range(2))
     return f"""
 <mujoco model="hexapod">
   <compiler angle="radian"/>

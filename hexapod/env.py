@@ -29,7 +29,7 @@ RESIDUAL_SCALE = 0.3         # rad of correction on top of the gait
 DIRECT_SCALE = 0.6           # rad of offset around the standing pose
 COMMAND_LOW = np.array([0.05, -0.05, -0.4])     # vx, vy [m/s], yaw rate [rad/s]
 COMMAND_HIGH = np.array([0.20, 0.05, 0.4])
-TERRAINS = ("stairs", "descend", "slope", "bumps", "bars")
+TERRAINS = ("stairs", "descend", "slope", "bumps", "bars", "course")
 
 
 class HexapodEnv(gym.Env):
@@ -42,7 +42,9 @@ class HexapodEnv(gym.Env):
         starting 0.5 m ahead of the robot, then a flat top) or "slope" (a smooth ramp
         with the same average incline as stairs of that riser: terrain_height per 0.25 m),
         "descend" (the robot starts on a platform and walks down 8 steps) or "bars"
-        (thresholds lying across the path every 0.3-0.6 m, like door sills or cables).
+        (thresholds lying across the path every 0.3-0.6 m, like door sills or cables),
+        or "course": all of them one after another in a walled 3 m corridor
+        (layout in robot.py; terrain_height sets the size of every obstacle).
         terrain_height: bump height or stair riser height in metres. With
         randomize=True each episode draws a height between 0 and this value.
         randomize: training-time randomization of friction, payload, servo gain,
@@ -66,6 +68,8 @@ class HexapodEnv(gym.Env):
         self.torso_body = self.model.body("torso").id
         self.torso_geom = self.model.geom("torso").id
         self.floor_geom = self.model.geom("floor").id
+        self.layer_mocap = [int(self.model.body(f"layer_{k}").mocapid[0]) for k in range(4)]
+        self.wall_mocap = [int(self.model.body(f"wall_{k}").mocapid[0]) for k in range(2)]
         self.stair_mocap = [int(self.model.body(f"stair_{i}").mocapid[0]) for i in range(robot.STAIR_STEPS)]
         self.total_mass = float(self.model.body_subtreemass[self.torso_body])
         self._nominal_torso_mass = float(self.model.body_mass[self.torso_body])
@@ -96,6 +100,22 @@ class HexapodEnv(gym.Env):
         return np.concatenate([gravity, gyro, joints, blocked, self.last_action, self.command,
                                [np.sin(clock), np.cos(clock)]]).astype(np.float32)
 
+    def _bars(self, field, height, start, end):
+        n = robot.TERRAIN_CELLS
+        x = start
+        while x < end:
+            col = n // 2 + round(x / (2 * robot.TERRAIN_SIZE / n))
+            field[:, col: col + 2] = height / robot.TERRAIN_MAX_HEIGHT      # hfield rows are y, columns are x
+            x += self.np_random.uniform(0.3, 0.6)
+
+    def _ramp(self, height, start):
+        """One slab tilted about y, its top surface meeting the ground at x = start."""
+        angle = np.arctan(height / 0.25)
+        c, s = np.cos(angle), np.sin(angle)
+        length, _, thick = robot.STAIR_SLAB
+        self.data.mocap_pos[self.stair_mocap[0]] = [start + c * length + s * thick, 0.0, s * length - c * thick]
+        self.data.mocap_quat[self.stair_mocap[0]] = [np.cos(angle / 2), 0.0, -np.sin(angle / 2), 0.0]
+
     def _new_terrain(self):
         height = self.terrain_height * (self.np_random.uniform() if self.randomize else 1.0)
         n = robot.TERRAIN_CELLS
@@ -106,24 +126,25 @@ class HexapodEnv(gym.Env):
             field = self.np_random.uniform(0, height / robot.TERRAIN_MAX_HEIGHT, (n, n))
             field[n // 2 - 8: n // 2 + 8, n // 2 - 8: n // 2 + 8] = 0.0     # flat 0.8 m start pad
         elif self.terrain == "bars":
-            x = robot.STAIR_START
-            while x < robot.TERRAIN_SIZE - 1.0:
-                col = n // 2 + round(x / (2 * robot.TERRAIN_SIZE / n))
-                field[:, col: col + 2] = height / robot.TERRAIN_MAX_HEIGHT      # hfield rows are y, columns are x
-                x += self.np_random.uniform(0.3, 0.6)
+            self._bars(field, height, robot.STAIR_START, robot.TERRAIN_SIZE - 1.0)
+        elif self.terrain == "course":
+            col = lambda x: n // 2 + round(x / (2 * robot.TERRAIN_SIZE / n))
+            self._bars(field, height, robot.COURSE_BARS[0], robot.COURSE_BARS[1] - 0.1)
+            a, b = col(robot.COURSE_RUBBLE[0]), col(robot.COURSE_RUBBLE[1])
+            field[:, a:b] = self.np_random.uniform(0, height / robot.TERRAIN_MAX_HEIGHT, (n, b - a))
+            for k, mocap in enumerate(self.layer_mocap):        # stairs up, platform, stairs down
+                self.data.mocap_pos[mocap] = [robot.COURSE_PYRAMID, 0.0, (k + 1) * height - robot.STAIR_SLAB[2]]
+            for mocap, side in zip(self.wall_mocap, (1, -1)):
+                self.data.mocap_pos[mocap] = [0.0, side * (robot.COURSE_WIDTH / 2 + 0.05), 0.5]
+            if height > 0:
+                self._ramp(height, robot.COURSE_RAMP)
         elif self.terrain == "descend":
             # slab i ends at step i and reaches back under the start platform
             for i, mocap in enumerate(self.stair_mocap):
                 self.data.mocap_pos[mocap] = [robot.STAIR_START + i * tread - robot.STAIR_SLAB[0], 0.0,
                                              (robot.STAIR_STEPS - i) * height - robot.STAIR_SLAB[2]]
         elif self.terrain == "slope" and height > 0:
-            # one slab tilted about y, its top surface meeting the ground at x = STAIR_START
-            angle = np.arctan(height / 0.25)
-            c, s = np.cos(angle), np.sin(angle)
-            length, _, thick = robot.STAIR_SLAB
-            self.data.mocap_pos[self.stair_mocap[0]] = [robot.STAIR_START + c * length + s * thick, 0.0,
-                                                        s * length - c * thick]
-            self.data.mocap_quat[self.stair_mocap[0]] = [np.cos(angle / 2), 0.0, -np.sin(angle / 2), 0.0]
+            self._ramp(height, robot.STAIR_START)
         elif height > 0:
             for i, mocap in enumerate(self.stair_mocap):
                 self.data.mocap_pos[mocap] = [robot.STAIR_START + i * tread + robot.STAIR_SLAB[0], 0.0,

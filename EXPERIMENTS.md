@@ -334,3 +334,30 @@ Summary over five terrains (only stairs up was trained on):
 
 The pattern: learning pays where a foot or the body gets caught on an edge
 going forward or up, and not on smooth or downhill ground.
+
+### Obstacle course: everything in one corridor (2026-11-13)
+
+`--terrain course`: a 3 m wide corridor between two walls, with every obstacle
+in a row. `--height` sets the size of all of them at once.
+
+    0.5-2.5 m bars | 2.5-4.5 m rubble | 5-8 m stairs up 4, platform, stairs down 4 | 8.5 m ramp | finish at 9.5 m
+
+    python evaluate.py <controller> --terrain course --height 0.04 0.06 0.08 --seconds 90 --out results_course.csv
+
+A trial ends at the finish line or after 90 s. No new training (v3 policies).
+Share of 20 trials that finished, and mean distance reached (finish = 9.5 m). No falls.
+
+| Obstacle size | Kinematic | Residual s0 | Residual s1 | Residual s2 | Direct 12M |
+|---|---|---|---|---|---|
+| 4 cm | 100% (9.5 m) | 100% (9.5 m) | 100% (9.6 m) | 100% (9.6 m) | 0% (2.5 m) |
+| 6 cm | 85% (8.7 m) | 100% (9.5 m) | 35% (7.6 m) | 100% (9.6 m) | 0% (1.7 m) |
+| 8 cm | 0% (0.5 m) | 70% (8.0 m) | 0% (2.9 m) | 0% (3.7 m) | 0% (1.9 m) |
+
+Finding: mixed, and less clean than the single-terrain tests.
+- 8 cm: the gait is stopped by the very first bar (0.5 m). All residual seeds
+  get further, but only seed 0 finishes (70%). Seeds 1 and 2 mostly stop in the
+  bars (1-2 m), a few get to 7-9 m.
+- 6 cm: seeds 0 and 2 finish every time, the gait 85%. Seed 1 is worse than the
+  gait (35%): it is slow (0.078 m/s) and runs out of time or stops in the rubble.
+- The seeds differ a lot on terrain they were not trained on. Training on the
+  course itself (or on a mix of terrains) is the obvious next experiment.

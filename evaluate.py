@@ -50,7 +50,8 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
     policy = (lambda obs: np.zeros(18)) if kinematic else load_policy(Path(controller), env)
 
     falls, climbed, speeds, sq_errors, tilts, energy, distance = 0, 0, [], [], [], 0.0, 0.0
-    stairs_top = robot.STAIR_START + robot.STAIR_STEPS * 0.25      # x where the flat top begins
+    # x the robot must pass: the flat top (or bottom) after the stairs, or the end of the course
+    stairs_top = robot.COURSE_FINISH if terrain == "course" else robot.STAIR_START + robot.STAIR_STEPS * 0.25
     for episode in range(episodes):
         obs, _ = env.reset(seed=1000 + episode)
         start = env.data.qpos[:2].copy()
@@ -62,20 +63,21 @@ def evaluate(controller: str, terrain: str, height: float, episodes: int, comman
             sq_errors.append(np.sum((np.asarray(command[:2]) - v[:2]) ** 2))
             tilts.append(np.arccos(np.clip(-info["gravity"][2], -1, 1)))
             energy += info["power"] * CONTROL_DT
-            done = terminated or truncated
+            # the course ends at its finish line (the ramp behind it goes on for metres)
+            done = terminated or truncated or (terrain == "course" and env.data.qpos[0] > stairs_top)
             if render:
                 time.sleep(CONTROL_DT)
         falls += terminated
         # going up: really on the top, not inside the stairs. Going down: past the last step is enough.
-        on_top = terrain == "descend" or env.data.qpos[2] > robot.STAIR_STEPS * height + 0.5 * robot.HOME_HEIGHT
+        on_top = terrain != "stairs" or env.data.qpos[2] > robot.STAIR_STEPS * height + 0.5 * robot.HOME_HEIGHT
         climbed += bool(env.data.qpos[0] > stairs_top and on_top and not terminated)
         distance += float(np.linalg.norm(env.data.qpos[:2] - start))
     env.close()
     return {
         "controller": controller, "terrain": terrain, "height_m": height, "episodes": episodes,
         "fall_rate": falls / episodes,
-        # stairs up or down: share of episodes that got past the whole staircase without falling
-        "climbed_rate": climbed / episodes if terrain in ("stairs", "descend") else float("nan"),
+        # stairs up or down, course: share of episodes that got past the whole thing without falling
+        "climbed_rate": climbed / episodes if terrain in ("stairs", "descend", "course") else float("nan"),
         "distance_m": distance / episodes,
         "speed_mps": float(np.mean(speeds)),
         "tracking_rmse_mps": float(np.sqrt(np.mean(sq_errors))),
